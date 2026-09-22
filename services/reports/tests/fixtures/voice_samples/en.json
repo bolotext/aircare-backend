@@ -1,0 +1,14 @@
+{
+  "language": "en-IN",
+  "simulated": true,
+  "confidence_note": "Native-fluency English dialogue.",
+  "scenario": "switching",
+  "conversation_id": "voice-sample-en-in-switching",
+  "conversation_log": [
+    {"role": "assistant", "content": "Hello, this is Maya calling from Manappuram Finance about a special gold loan offer for existing customers. Do you have a minute?", "timestamp": "2026-09-15T07:01:08Z"},
+    {"role": "user", "content": "Actually, before that — I wanted to ask about my existing personal loan EMI date, not the gold loan.", "timestamp": "2026-09-15T07:01:15Z"},
+    {"role": "assistant", "content": "Sure, I can switch to that. Your personal loan EMI is due on the 5th of every month. Would you also like to hear about the gold loan offer, or should I stop there?", "timestamp": "2026-09-15T07:01:20Z"},
+    {"role": "user", "content": "Go ahead, tell me about the gold loan too.", "timestamp": "2026-09-15T07:01:26Z"},
+    {"role": "assistant", "content": "Great — the gold loan offer starts at 0.79% interest per month for premium customers like you. Would you like a callback from a branch officer?", "timestamp": "2026-09-15T07:01:31Z"}
+  ]
+}

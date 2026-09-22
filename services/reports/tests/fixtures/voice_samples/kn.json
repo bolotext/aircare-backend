@@ -1,0 +1,13 @@
+{
+  "language": "kn-IN",
+  "simulated": true,
+  "confidence_note": "Basic Kannada dialogue, styled after the real Manappuram gold-loan call shape from the assignment's sample document; kept to short, simple sentences since my fluency in Kannada is lower than in Hindi/English — flagged rather than presented as native-quality translation.",
+  "scenario": "switching",
+  "conversation_id": "voice-sample-kn-in-switching",
+  "conversation_log": [
+    {"role": "assistant", "content": "ನಮಸ್ಕಾರ! ನಾನು ಮಾಯಾ ಮಾತನಾಡುತ್ತಿದ್ದೇನೆ, ಮಣಪ್ಪುರಂ ಫೈನಾನ್ಸ್‌ನಿಂದ. ಗೋಲ್ಡ್ ಲೋನ್ ಮೇಲೆ ವಿಶೇಷ ಆಫರ್ ಇದೆ.", "timestamp": "2026-09-15T07:05:00Z"},
+    {"role": "user", "content": "ಗೋಲ್ಡ್ ಲೋನ್ ಬೇಡ, ನನಗೆ ಪರ್ಸನಲ್ ಲೋನ್ ಬಗ್ಗೆ ಹೇಳಿ.", "timestamp": "2026-09-15T07:05:06Z"},
+    {"role": "assistant", "content": "ಸರಿ, ಪರ್ಸನಲ್ ಲೋನ್ ಬಗ್ಗೆ ಹೇಳುತ್ತೇನೆ. ಬಡ್ಡಿದರ ವಾರ್ಷಿಕ ಹನ್ನೆರಡು ಪ್ರತಿಶತದಿಂದ ಶುರುವಾಗುತ್ತೆ. ಇದರ ಬಗ್ಗೆ ಇನ್ನಷ್ಟು ತಿಳಿಯಲು ಬಯಸುತ್ತೀರಾ?", "timestamp": "2026-09-15T07:05:12Z"},
+    {"role": "user", "content": "ಹೌದು, ಇನ್ನಷ್ಟು ಹೇಳಿ.", "timestamp": "2026-09-15T07:05:17Z"}
+  ]
+}

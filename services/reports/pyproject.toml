@@ -1,0 +1,34 @@
+[project]
+name = "reports-service"
+version = "0.1.0"
+description = "Reporting microservice: RBAC-gated call dashboard, CSV export, and (Phase 3) the daily automailer."
+requires-python = ">=3.12"
+dependencies = [
+    "common",
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.34.0",
+    "motor>=3.6.0",
+    "beanie>=1.29.0",
+    "pydantic-settings>=2.7.0",
+    "httpx>=0.28.0",
+    "jinja2>=3.1.0",
+    "aiosmtplib>=3.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.25.0",
+    "mongomock-motor>=0.0.35",
+]
+
+[tool.uv.sources]
+common = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.12.15,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

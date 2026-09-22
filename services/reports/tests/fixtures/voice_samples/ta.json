@@ -1,0 +1,13 @@
+{
+  "language": "ta-IN",
+  "simulated": true,
+  "confidence_note": "Basic Tamil dialogue; kept to short, simple sentences since my fluency in Tamil is lower than in Hindi/English — flagged rather than presented as native-quality translation.",
+  "scenario": "clarification",
+  "conversation_id": "voice-sample-ta-in-clarification",
+  "conversation_log": [
+    {"role": "assistant", "content": "வணக்கம்! நான் மாயா, மணப்புரம் ஃபைனான்ஸ் நிறுவனத்திலிருந்து பேசுகிறேன். உங்கள் தங்க கடனுக்கு ஒரு சிறப்பு சலுகை உள்ளது.", "timestamp": "2026-09-15T07:03:00Z"},
+    {"role": "user", "content": "எந்த கடன்? எனக்கு இப்போது எந்த கடனும் இல்லையே.", "timestamp": "2026-09-15T07:03:05Z"},
+    {"role": "assistant", "content": "மன்னிக்கவும், தெளிவுபடுத்துகிறேன் — இது உங்கள் தற்போதைய கணக்குடன் தொடர்புடையது அல்ல, இது புதிய தங்க கடன் சலுகை பற்றியது. இதைப் பற்றி கேட்க விரும்புகிறீர்களா?", "timestamp": "2026-09-15T07:03:10Z"},
+    {"role": "user", "content": "சரி, இப்போது புரிந்தது. சொல்லுங்கள்.", "timestamp": "2026-09-15T07:03:15Z"}
+  ]
+}

@@ -1,0 +1,5 @@
+[tool.uv.workspace]
+members = ["libs/*", "services/*"]
+
+[tool.uv]
+package = false

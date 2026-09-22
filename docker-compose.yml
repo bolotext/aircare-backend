@@ -1,0 +1,86 @@
+services:
+
+  mailhog:
+    image: mailhog/mailhog
+    container_name: aircare_mailhog
+    ports:
+      - 1025:1025  # SMTP sink for the automailer
+      - 8025:8025  # Web UI to inspect captured emails
+    networks:
+      - aircare-network
+    restart: always
+
+  users:
+    build:
+      context: .
+      dockerfile: services/users/Dockerfile
+    container_name: aircare_users
+    env_file:
+      - services/users/.env
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      # Worker process count (no --reload in this production entrypoint —
+      # see services/users/entrypoint.sh). Defaults to 2 if unset; override
+      # here per environment, e.g. WEB_CONCURRENCY: "4".
+      # WEB_CONCURRENCY: "2"
+    depends_on:
+      - mongo
+    networks:
+      - aircare-network
+    restart: always
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    container_name: aircare_api_gateway
+    ports:
+      - 8000:8000
+    env_file:
+      - services/api-gateway/.env
+    environment:
+      USERS_SERVICE_URL: http://users:8001
+      REPORTS_SERVICE_URL: http://reports:8002
+      # Worker process count (no --reload in this production entrypoint —
+      # see services/api-gateway/entrypoint.sh). Defaults to 2 if unset;
+      # override here per environment, e.g. WEB_CONCURRENCY: "4".
+      # WEB_CONCURRENCY: "2"
+    depends_on:
+      - users
+      - reports
+    networks:
+      - aircare-network
+    restart: always
+
+  reports:
+    build:
+      context: .
+      dockerfile: services/reports/Dockerfile
+    container_name: aircare_reports
+    ports:
+      - 8002:8002
+    env_file:
+      - services/reports/.env
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      USERS_SERVICE_URL: http://users:8001
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+      # Worker process count (no --reload in this production entrypoint —
+      # see services/reports/entrypoint.sh). Defaults to 2 if unset; override
+      # here per environment, e.g. WEB_CONCURRENCY: "4".
+      # WEB_CONCURRENCY: "2"
+    depends_on:
+      - mongo
+      - users
+      - mailhog
+    networks:
+      - aircare-network
+    restart: always
+
+networks:
+  aircare-network:
+    driver: bridge
+
+volumes:
+  mongo_data:

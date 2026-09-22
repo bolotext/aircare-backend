@@ -1,0 +1,19 @@
+[project]
+name = "api-gateway"
+version = "0.1.0"
+description = "Public entrypoint: routes /api/v1/* to internal microservices."
+requires-python = ">=3.12"
+dependencies = [
+    "common",
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.34.0",
+    "httpx>=0.28.0",
+    "pydantic-settings>=2.7.0",
+]
+
+[tool.uv.sources]
+common = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.12.15,<0.13.0"]
+build-backend = "uv_build"

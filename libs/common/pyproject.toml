@@ -1,0 +1,15 @@
+[project]
+name = "common"
+version = "0.1.0"
+description = "Shared code across aircare microservices: JWT verification, error schema, RBAC enum."
+requires-python = ">=3.12"
+dependencies = [
+    "pyjwt>=2.10.0",
+    "pydantic>=2.9.0",
+    "fastapi>=0.141.1",
+    "colorlog>=6.9.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.15,<0.13.0"]
+build-backend = "uv_build"

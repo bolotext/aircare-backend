@@ -1,0 +1,13 @@
+{
+  "language": "te-IN",
+  "simulated": true,
+  "confidence_note": "Basic Telugu dialogue; kept to short, simple sentences since my fluency in Telugu is lower than in Hindi/English — flagged rather than presented as native-quality translation.",
+  "scenario": "wrong_identity",
+  "conversation_id": "voice-sample-te-in-wrong-identity",
+  "conversation_log": [
+    {"role": "assistant", "content": "నమస్కారం! నేను మాయా, మణప్పురం ఫైనాన్స్ నుండి మాట్లాడుతున్నాను. మీరు రాజేష్ కుమార్ గారేనా?", "timestamp": "2026-09-15T07:04:00Z"},
+    {"role": "user", "content": "కాదు, నా పేరు రాజేష్ కాదు, నేను వేరే వ్యక్తిని.", "timestamp": "2026-09-15T07:04:05Z"},
+    {"role": "assistant", "content": "క్షమించండి, ఇది గోప్యమైన ఖాతా సమాచారం కాబట్టి, మీరు ఖాతాదారు కాకపోతే నేను వివరాలు చెప్పలేను. ఈ నంబర్ తప్పుగా డయల్ అయిందేమో క్షమించండి, మంచి రోజు కానివ్వండి.", "timestamp": "2026-09-15T07:04:09Z"},
+    {"role": "user", "content": "పర్వాలేదు, ధన్యవాదాలు.", "timestamp": "2026-09-15T07:04:12Z"}
+  ]
+}

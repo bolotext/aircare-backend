@@ -1,0 +1,13 @@
+{
+  "language": "hi-IN",
+  "simulated": true,
+  "confidence_note": "Conversational Hindi in Devanagari script; simple sentence structure to keep translation quality reliable.",
+  "scenario": "interruption",
+  "conversation_id": "voice-sample-hi-in-interruption",
+  "conversation_log": [
+    {"role": "assistant", "content": "नमस्ते! मैं माया बोल रही हूँ, मणप्पुरम फाइनेंस से। आपके गोल्ड लोन पर एक खास ऑफर है, जिसमें ब्याज दर बहुत कम है और यह ऑफर सिर्फ इस हफ्ते के लिए...", "timestamp": "2026-09-15T07:02:00Z"},
+    {"role": "user", "content": "रुकिए रुकिए, मुझे अभी समय नहीं है, बाद में कॉल करें।", "timestamp": "2026-09-15T07:02:04Z"},
+    {"role": "assistant", "content": "ठीक है, मैं समझ गई। मैं आपको आज शाम को दोबारा कॉल करती हूँ। धन्यवाद।", "timestamp": "2026-09-15T07:02:06Z"},
+    {"role": "user", "content": "हाँ, शाम को ठीक रहेगा।", "timestamp": "2026-09-15T07:02:09Z"}
+  ]
+}
