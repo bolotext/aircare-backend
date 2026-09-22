@@ -38,6 +38,11 @@ run-reports:
 	@echo 'Running the Reports service locally on :8002 with --reload (dev only; expects a reachable MongoDB and the Users service, see services/reports/.env)'
 	cd services/reports && uv run python main.py serve --reload
 
+run-all:
+	@osascript -e 'tell application "Terminal" to do script "cd $(PWD)/services/users && uv run python main.py serve --reload"'
+	@osascript -e 'tell application "Terminal" to do script "cd $(PWD)/services/api-gateway && uv run python main.py --reload"'
+	@osascript -e 'tell application "Terminal" to do script "cd $(PWD)/services/reports && uv run python main.py serve --reload"'
+
 run-reports-scheduler:
 	@echo 'Running the Reports service automailer scheduler loop (expects a reachable MongoDB and SMTP server, see services/reports/.env)'
 	cd services/reports && uv run python main.py schedule
