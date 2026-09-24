@@ -25,15 +25,10 @@ class Settings(BaseSettings):
     default_page_size: int = 20
     max_page_size: int = 100
 
-    # Automailer / SMTP
-    smtp_host: str = "localhost"
-    smtp_port: int = 1025
-    smtp_username: str | None = None
-    smtp_password: str | None = None
-    smtp_use_tls: bool = False
-    smtp_from_address: str = "reports@aircare.local"
-    smtp_timeout_seconds: float = 10.0
-    max_smtp_attempts: int = 3
+    # Automailer — internal mail-relay HTTP API. Without it, send_mail raises
+    # and the report run is marked "failed".
+    alert_api_url: str = ""
+    alert_api_timeout_seconds: float = 10.0
 
     # Daily send time, Asia/Kolkata hour-of-day (0-23).
     report_send_hour_ist: int = 6

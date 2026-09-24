@@ -1,6 +1,6 @@
 # AirCare Backend
 
-Microservice backend for RBAC-gated call reporting: a dashboard with project-scoped access control, a paginated call list and call detail view (transcript, event timeline, tool results), page-1 summary metrics, CSV export, and a daily automailer (HTML summary + CSV, identical metrics to the dashboard). See `docs/KNOWN_LIMITATIONS.md` for exactly what is and isn't real in this build, and `docs/SCHEMA_AND_INDEXES.md` for the full Mongo schema.
+Microservice backend for RBAC-gated call reporting: a dashboard with project-scoped access control, a paginated call list and call detail view (transcript, event timeline, tool results), page-1 summary metrics, CSV export, and a daily automailer (HTML summary, identical metrics to the dashboard, sent via the internal mail-relay HTTP API). See `docs/KNOWN_LIMITATIONS.md` for exactly what is and isn't real in this build, and `docs/SCHEMA_AND_INDEXES.md` for the full Mongo schema.
 
 ## Services
 
@@ -30,7 +30,7 @@ cp services/reports/.env.example services/reports/.env
 cp services/api-gateway/.env.example services/api-gateway/.env
 
 make docker-build
-make docker-up          # mongo, mailhog, users, api-gateway, reports
+make docker-up          # mongo, users, api-gateway, reports
 
 make seed                # roles/permissions + bootstrap Admin (users-service)
 make seed-demo            # demo org, 2 projects, 1 Supervisor (project A only), 1 Viewer (project B only)
@@ -55,12 +55,12 @@ curl http://localhost:8000/api/v1/dashboard?project_id=<project A id> -H "Author
 # CSV export (ADMIN/SUPERVISOR only — VIEWER gets 403)
 curl http://localhost:8000/api/v1/export.csv?project_id=<project A id> -H "Authorization: Bearer $TOKEN"
 
-# Manually trigger the automailer for a project, then check http://localhost:8025 (Mailhog UI)
+# Manually trigger the automailer for a project (delivered via ALERT_API_URL — see services/reports/.env.example)
 curl -X POST http://localhost:8000/api/v1/run -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d '{"scope":"<project A id>","extra_recipients":["qa-test@example.com"]}'
 ```
 
-This exact sequence (real MongoDB + real Mailhog via `docker compose`, not the mongomock test double) was run once end-to-end during development: seed → seed-demo → seed-reports-calls → login → dashboard → cross-project 403 → CSV export → manual report trigger → email captured in Mailhog.
+This exact sequence (real MongoDB via `docker compose`, not the mongomock test double) was run once end-to-end during development: seed → seed-demo → seed-reports-calls → login → dashboard → cross-project 403 → CSV export → manual report trigger → email delivered via the mail-relay API.
 
 ### Running tests
 
@@ -110,7 +110,7 @@ service in `docker-compose.yml` (commented out there, defaulting to 2) without r
 
 ```bash
 make docker-build
-make docker-up      # mongo, mailhog, users, api-gateway, reports — production mode, see above
+make docker-up      # mongo, users, api-gateway, reports — production mode, see above
 ```
 
 ## Documentation

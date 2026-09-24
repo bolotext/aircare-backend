@@ -1,7 +1,6 @@
 import pytest
 from beanie import PydanticObjectId
 
-from reports_service.mailer import smtp_client
 from reports_service.mailer.pipeline import run_report
 from reports_service.mailer.window import previous_ist_calendar_day
 from reports_service.reports.model import ReportRun
@@ -12,10 +11,10 @@ PROJECT = PydanticObjectId()
 
 
 def _patch_send(monkeypatch, sink: list) -> None:
-    async def fake_send_once(message):
-        sink.append(message)
+    async def fake_send_mail(**kwargs):
+        sink.append(kwargs)
 
-    monkeypatch.setattr(smtp_client, "_smtp_send_once", fake_send_once)
+    monkeypatch.setattr("reports_service.mailer.pipeline.send_mail", fake_send_mail)
 
 
 async def test_second_scheduled_run_same_scope_and_day_is_skipped_not_resent(app, monkeypatch):

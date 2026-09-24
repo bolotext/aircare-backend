@@ -24,7 +24,7 @@ logging.basicConfig(level=settings.log_level)
 _DESCRIPTION = f"""
 RBAC-gated call reporting for AirCare: paginated call list, call detail
 (transcript, event timeline, tool results), dashboard metrics, CSV export,
-the daily automailer (scheduled HTML summary + CSV email, manual trigger,
+the daily automailer (scheduled HTML summary email, manual trigger,
 recipient configuration), project-scoped patient roster CRUD, and (Admin
 only) the condition -> AQI risk-threshold reference table.
 

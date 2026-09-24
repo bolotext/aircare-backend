@@ -8,12 +8,11 @@ from uuid import uuid4
 
 import httpx
 
-from reports_service.calls.repository import CallFilter, list_all
+from reports_service.calls.repository import CallFilter
 from reports_service.core.deps import resolve_collection_for_project
 from reports_service.mailer.render import render_report_html
-from reports_service.mailer.smtp_client import send_report_email
+from reports_service.mailer.send_mail import send_mail
 from reports_service.mailer.window import run_key_date_component
-from reports_service.metrics.csv_export import build_csv
 from reports_service.metrics.service import compute_metrics
 from reports_service.reports import repository as report_repo
 from reports_service.reports.model import ReportRun, ReportRunTrigger
@@ -85,19 +84,19 @@ async def run_report(
 
     call_filter = CallFilter(project_ids=_scope_to_project_ids(scope), date_from=window_start, date_to=window_end)
     metrics = await compute_metrics(call_filter, collection=collection)
-    calls = await list_all(call_filter, collection=collection)
-    csv_bytes = build_csv(calls, metrics)
     html = render_report_html(
         scope_label=_scope_label(scope), window_start=window_start, window_end=window_end, metrics=metrics
     )
 
     date_label = window_start.astimezone(timezone.utc).date().isoformat()
-    outcome = await send_report_email(
-        to_addrs=recipients,
-        subject=f"AirCare Call Report — {_scope_label(scope)} — {date_label}",
-        html_body=html,
-        csv_bytes=csv_bytes,
-        csv_filename=f"call_report_{scope}_{date_label}.csv",
-    )
+    try:
+        await send_mail(
+            to_addrs=recipients,
+            subject=f"AirCare Call Report — {_scope_label(scope)} — {date_label}",
+            message=html,
+            is_html=True,
+        )
+    except Exception as exc:
+        return await report_repo.mark_status(run, "failed", attempts=1, errors=[str(exc)])
 
-    return await report_repo.mark_status(run, outcome.status, attempts=outcome.attempts, errors=outcome.errors)
+    return await report_repo.mark_status(run, "success", attempts=1)

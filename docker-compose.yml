@@ -1,15 +1,5 @@
 services:
 
-  mailhog:
-    image: mailhog/mailhog
-    container_name: aircare_mailhog
-    ports:
-      - 1025:1025  # SMTP sink for the automailer
-      - 8025:8025  # Web UI to inspect captured emails
-    networks:
-      - aircare-network
-    restart: always
-
   users:
     build:
       context: .
@@ -64,8 +54,6 @@ services:
     environment:
       MONGO_URI: mongodb://mongo:27017
       USERS_SERVICE_URL: http://users:8001
-      SMTP_HOST: mailhog
-      SMTP_PORT: "1025"
       # Worker process count (no --reload in this production entrypoint —
       # see services/reports/entrypoint.sh). Defaults to 2 if unset; override
       # here per environment, e.g. WEB_CONCURRENCY: "4".
@@ -73,7 +61,6 @@ services:
     depends_on:
       - mongo
       - users
-      - mailhog
     networks:
       - aircare-network
     restart: always
