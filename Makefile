@@ -1,4 +1,4 @@
-.PHONY: install test test-reports seed seed-demo seed-reports-calls seed-reports-patients seed-reports-risk-thresholds run-users run-gateway run-reports run-reports-scheduler run-users-prod run-gateway-prod run-reports-prod docker-build docker-up docker-down docker-restart
+.PHONY: install test test-reports seed seed-demo seed-reports-calls seed-reports-patients seed-reports-risk-thresholds seed-scheduler-demo run-users run-gateway run-reports run-reports-scheduler run-scheduler run-users-prod run-gateway-prod run-reports-prod docker-build docker-up docker-down docker-restart
 
 install:
 	@echo 'Installing all workspace packages with uv'
@@ -32,6 +32,10 @@ seed-reports-risk-thresholds:
 	@echo 'Seeding the condition -> AQI risk-threshold reference table (Reports service)'
 	cd services/reports && uv run python main.py seed-risk-thresholds
 
+seed-scheduler-demo:
+	@echo 'Seeding the two demo projects, 40-patient roster, and AQI risk thresholds (Scheduler service). Idempotent, safe to re-run.'
+	cd services/scheduler && uv run python seed.py
+
 # --- Development (auto-reload on source changes; single process — never use these in production) ---
 
 run-users:
@@ -60,6 +64,10 @@ endif
 run-reports-scheduler:
 	@echo 'Running the Reports service automailer scheduler loop (expects a reachable MongoDB and SMTP server, see services/reports/.env)'
 	cd services/reports && uv run python main.py schedule
+
+run-scheduler:
+	@echo 'Running the AQI outbound advisory scheduler loop (expects a reachable MongoDB, see services/scheduler/.env)'
+	cd services/scheduler && uv run python aqi_outbound_scheduler.py
 
 # --- Production-style (no reload, multiple worker processes; for docker-compose this is what
 # services/*/entrypoint.sh already runs — see WEB_CONCURRENCY there) ---

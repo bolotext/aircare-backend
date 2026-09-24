@@ -11,6 +11,7 @@ members = [
     "api-gateway",
     "common",
     "reports-service",
+    "scheduler-service",
     "users-service",
 ]
 
@@ -819,6 +820,37 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "mongomock-motor", specifier = ">=0.0.35" },
+    { name = "pytest", specifier = ">=8.3.0" },
+    { name = "pytest-asyncio", specifier = ">=0.25.0" },
+]
+
+[[package]]
+name = "scheduler-service"
+version = "0.1.0"
+source = { virtual = "services/scheduler" }
+dependencies = [
+    { name = "common" },
+    { name = "httpx" },
+    { name = "motor" },
+    { name = "python-dotenv" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "common", editable = "libs/common" },
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "motor", specifier = ">=3.6.0" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
     { name = "pytest", specifier = ">=8.3.0" },
     { name = "pytest-asyncio", specifier = ">=0.25.0" },
 ]

@@ -1,0 +1,23 @@
+[project]
+name = "scheduler-service"
+version = "0.1.0"
+description = "Scheduler microservice: periodic AQI outbound advisory sweep."
+requires-python = ">=3.12"
+dependencies = [
+    "common",
+    "motor>=3.6.0",
+    "httpx>=0.28.0",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.25.0",
+]
+
+[tool.uv.sources]
+common = { workspace = true }
+
+[tool.uv]
+package = false
