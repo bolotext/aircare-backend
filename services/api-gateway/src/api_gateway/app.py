@@ -32,6 +32,9 @@ def _route_map() -> dict[str, str | None]:
         "recipients": settings.reports_service_url,
         "run": settings.reports_service_url,
         "runs": settings.reports_service_url,
+        "patients": settings.reports_service_url,
+        "patient-calls": settings.reports_service_url,
+        "risk-thresholds": settings.reports_service_url,
         # MCP servers (Redis session store, AQI, teleconsultation booking) are
         # a separate system maintained outside this codebase and are not
         # proxied here: they speak MCP tool-call semantics, not this

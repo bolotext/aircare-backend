@@ -1,4 +1,4 @@
-.PHONY: install test test-reports seed seed-demo seed-reports-calls run-users run-gateway run-reports run-reports-scheduler run-users-prod run-gateway-prod run-reports-prod docker-build docker-up docker-down docker-restart
+.PHONY: install test test-reports seed seed-demo seed-reports-calls seed-reports-patients seed-reports-risk-thresholds run-users run-gateway run-reports run-reports-scheduler run-users-prod run-gateway-prod run-reports-prod docker-build docker-up docker-down docker-restart
 
 install:
 	@echo 'Installing all workspace packages with uv'
@@ -23,6 +23,14 @@ seed-demo:
 seed-reports-calls:
 	@echo 'Seeding synthetic call data for the demo projects (Reports service). Pass ids: make seed-reports-calls ORG_ID=... PROJECT_IDS="id1 id2"'
 	cd services/reports && uv run python main.py seed-calls --organization-id $(ORG_ID) $(foreach id,$(PROJECT_IDS),--project-id $(id))
+
+seed-reports-patients:
+	@echo 'Seeding the demo patient roster, split across the two demo projects (Reports service). Pass ids: make seed-reports-patients PROJECT_A_ID=... PROJECT_B_ID=...'
+	cd services/reports && uv run python main.py seed-patients --project-a-id $(PROJECT_A_ID) --project-b-id $(PROJECT_B_ID)
+
+seed-reports-risk-thresholds:
+	@echo 'Seeding the condition -> AQI risk-threshold reference table (Reports service)'
+	cd services/reports && uv run python main.py seed-risk-thresholds
 
 # --- Development (auto-reload on source changes; single process — never use these in production) ---
 

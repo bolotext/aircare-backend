@@ -44,6 +44,14 @@ class Call(Document):
             IndexModel([("project_id", 1), ("call_start_time", -1)]),
             IndexModel([("project_id", 1), ("disposition", 1)]),
             IndexModel([("project_id", 1), ("language", 1)]),
-            IndexModel("conversation_id", unique=True),
+            # sparse=True is load-bearing, not cosmetic: this collection also
+            # holds patient-advisory-call documents (see
+            # patient_calls/model.py) which have no `conversation_id` field
+            # at all. A non-sparse unique index treats every one of those as
+            # `conversation_id: null`, and MongoDB only permits *one* null in
+            # a non-sparse unique index — the second patient-advisory-call
+            # insert would then fail with a duplicate-key error unrelated to
+            # any real conversation_id collision.
+            IndexModel("conversation_id", unique=True, sparse=True),
             IndexModel("organization_id"),
         ]

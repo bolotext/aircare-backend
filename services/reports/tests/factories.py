@@ -1,17 +1,34 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 from beanie import PydanticObjectId
 
 from reports_service.calls.model import Call
 from reports_service.core.users_client import IdentityContext
+from reports_service.patient_calls.model import AqiReading, PatientCall
+from reports_service.patients.model import Patient
+from reports_service.risk_thresholds.model import RiskThreshold
 
 DEFAULT_PERMISSIONS = {
     "ADMIN": frozenset({"*"}),
     "SUPERVISOR": frozenset(
-        {"project.view", "report.view", "report.export", "report.configure_recipients", "report.trigger_manual"}
+        {
+            "project.view",
+            "report.view",
+            "report.export",
+            "report.configure_recipients",
+            "report.trigger_manual",
+            "patient.view",
+            "patient.create",
+            "patient.update",
+            "patient.delete",
+            "patient_call.view",
+            "patient_call.create",
+            "patient_call.update",
+            "patient_call.delete",
+        }
     ),
-    "VIEWER": frozenset({"project.view", "report.view"}),
+    "VIEWER": frozenset({"project.view", "report.view", "patient.view", "patient_call.view"}),
 }
 
 
@@ -34,6 +51,57 @@ async def make_call(project_id: PydanticObjectId, organization_id: PydanticObjec
     )
     defaults.update(overrides)
     call = Call(**defaults)
+    await call.insert()
+    return call
+
+
+async def make_patient(project_id: PydanticObjectId, **overrides) -> Patient:
+    defaults = dict(
+        patient_id=f"PT-TEST-{uuid4().hex[:8]}",
+        project_id=project_id,
+        full_name="Test Patient",
+        phone_number="+910000000000",
+        dob=date(1990, 1, 1),
+        city="Delhi",
+        condition="asthma",
+        preferred_language="hindi",
+        risk_flag=False,
+        do_not_call=False,
+        is_seeded=False,
+    )
+    defaults.update(overrides)
+    patient = Patient(**defaults)
+    await patient.insert()
+    return patient
+
+
+async def make_risk_threshold(**overrides) -> RiskThreshold:
+    defaults = dict(condition="asthma", risk_threshold_aqi=150, pollutant="pm2_5", is_seeded=False)
+    defaults.update(overrides)
+    threshold = RiskThreshold(**defaults)
+    await threshold.insert()
+    return threshold
+
+
+async def make_patient_call(patient_id: str, **overrides) -> PatientCall:
+    defaults = dict(
+        call_id=f"call-test-{uuid4().hex[:8]}",
+        patient_id=patient_id,
+        phone_number="+910000000000",
+        city="Delhi",
+        condition="asthma",
+        direction="outbound",
+        live_aqi_reading=AqiReading(value=180.0, timestamp="2026-09-21T15:30:00Z", raw_response={}),
+        second_aqi_reading=None,
+        risk_threshold=150,
+        aqi_reconciliation_delta=None,
+        reading_timestamp=datetime.now(timezone.utc),
+        status="APPOINTMENT_INTERESTED",
+        disposition=None,
+        telephony_triggered=False,
+    )
+    defaults.update(overrides)
+    call = PatientCall(**defaults)
     await call.insert()
     return call
 

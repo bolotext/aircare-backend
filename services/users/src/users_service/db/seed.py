@@ -48,8 +48,16 @@ ROLE_PERMISSIONS: dict[Role, list[str]] = {
         "report.export",
         "report.configure_recipients",
         "report.trigger_manual",
+        "patient.view",
+        "patient.create",
+        "patient.update",
+        "patient.delete",
+        "patient_call.view",
+        "patient_call.create",
+        "patient_call.update",
+        "patient_call.delete",
     ],
-    Role.VIEWER: ["project.view", "report.view"],
+    Role.VIEWER: ["project.view", "report.view", "patient.view", "patient_call.view"],
 }
 
 PERMISSION_DESCRIPTIONS: dict[str, str] = {
@@ -69,6 +77,19 @@ PERMISSION_DESCRIPTIONS: dict[str, str] = {
     "report.export": "Export the call list/dashboard as CSV for permitted projects.",
     "report.configure_recipients": "Configure automailer test recipients for permitted projects.",
     "report.trigger_manual": "Trigger a manual automailer run for permitted projects.",
+    "patient.view": "View a project's patient roster (scoped to assigned projects unless global).",
+    "patient.create": "Add a patient to a project's roster.",
+    "patient.update": "Update a patient record.",
+    "patient.delete": "Remove a patient from a project's roster.",
+    "patient.*": "All patient permissions.",
+    "patient_call.view": "View a project's patient advisory calls (scoped to assigned projects unless global).",
+    "patient_call.create": "Record a new patient advisory call.",
+    "patient_call.update": "Update a patient advisory call record.",
+    "patient_call.delete": "Remove a patient advisory call record.",
+    "patient_call.*": "All patient advisory call permissions.",
+    "risk_threshold.view": "View the condition -> AQI risk-threshold reference table (Admin only).",
+    "risk_threshold.manage": "Create, update, or delete condition risk thresholds (Admin only).",
+    "risk_threshold.*": "All risk-threshold permissions.",
     "*": "All permissions (platform-level).",
 }
 

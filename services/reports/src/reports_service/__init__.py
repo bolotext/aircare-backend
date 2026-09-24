@@ -53,6 +53,24 @@ async def _seed_calls(project_ids: list[str], organization_id: str, ref_date: st
     await close_db()
 
 
+async def _seed_patients(project_a_id: str, project_b_id: str) -> None:
+    from reports_service.db.mongodb import close_db, get_client, init_db
+    from reports_service.seed.seed_patients import seed_patients
+
+    await init_db(get_client())
+    await seed_patients(project_a_id, project_b_id)
+    await close_db()
+
+
+async def _seed_risk_thresholds() -> None:
+    from reports_service.db.mongodb import close_db, get_client, init_db
+    from reports_service.seed.seed_risk_thresholds import seed_risk_thresholds
+
+    await init_db(get_client())
+    await seed_risk_thresholds()
+    await close_db()
+
+
 async def _schedule() -> None:
     import httpx
 
@@ -71,12 +89,19 @@ async def _schedule() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="dummay Reports microservice")
-    parser.add_argument("command", nargs="?", default="serve", choices=["serve", "seed-calls", "schedule"])
+    parser.add_argument(
+        "command",
+        nargs="?",
+        default="serve",
+        choices=["serve", "seed-calls", "seed-patients", "seed-risk-thresholds", "schedule"],
+    )
     parser.add_argument("--log-level", default="info")
     parser.add_argument("--project-id", dest="project_ids", action="append", default=[])
     parser.add_argument("--organization-id", dest="organization_id", default=None)
     parser.add_argument("--date", dest="ref_date", default=None, help="ISO date, default: yesterday in Asia/Kolkata")
     parser.add_argument("--calls-per-project", type=int, default=30)
+    parser.add_argument("--project-a-id", dest="project_a_id", default=None, help="seed-patients only")
+    parser.add_argument("--project-b-id", dest="project_b_id", default=None, help="seed-patients only")
     parser.add_argument(
         "--reload",
         action="store_true",
@@ -99,6 +124,12 @@ def main() -> None:
         if not args.project_ids or not args.organization_id:
             parser.error("seed-calls requires at least one --project-id and an --organization-id")
         asyncio.run(_seed_calls(args.project_ids, args.organization_id, args.ref_date, args.calls_per_project))
+    elif args.command == "seed-patients":
+        if not args.project_a_id or not args.project_b_id:
+            parser.error("seed-patients requires --project-a-id and --project-b-id")
+        asyncio.run(_seed_patients(args.project_a_id, args.project_b_id))
+    elif args.command == "seed-risk-thresholds":
+        asyncio.run(_seed_risk_thresholds())
     elif args.command == "schedule":
         asyncio.run(_schedule())
     else:

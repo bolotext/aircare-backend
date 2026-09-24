@@ -240,6 +240,16 @@ class UnrecognizedReportSchemaError(Exception):
 # given collection skips it.
 _detected_cache: dict[tuple[str, str], Callable[..., dict] | None] = {}
 
+# `aircare.calls` (see patient_calls/model.py) deliberately shares its
+# physical collection with an unrelated document shape: AQI-triggered patient
+# advisory-call records written by an external system, keyed by `call_id`
+# (never `conversation_id`) and carrying `live_aqi_reading`. Sampling one of
+# those here would misdetect the whole collection as an unrecognized raw
+# export and 422 every native-Call project pointed at it (e.g. the demo
+# projects) — so detection explicitly excludes that shape when picking a
+# sample, exactly as if those documents weren't in this collection at all.
+_PATIENT_ADVISORY_CALL_EXCLUSION = {"call_id": {"$exists": False}, "live_aqi_reading": {"$exists": False}}
+
 
 async def resolve_adapter(collection: AsyncIOMotorCollection) -> Callable[..., dict] | None:
     """Figures out how to read `collection`'s documents as `Call`s by
@@ -254,7 +264,7 @@ async def resolve_adapter(collection: AsyncIOMotorCollection) -> Callable[..., d
     if key in _detected_cache:
         return _detected_cache[key]
 
-    sample = await collection.find_one({})
+    sample = await collection.find_one(_PATIENT_ADVISORY_CALL_EXCLUSION)
     if sample is None:
         # Nothing to detect yet (a newly connected, not-yet-populated
         # project). Not cached: once real documents land, the next request

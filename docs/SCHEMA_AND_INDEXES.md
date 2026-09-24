@@ -86,6 +86,8 @@ A strict, indexed subset of fields for filtering/pagination/aggregation, plus a 
 
 This is the *default* location — the one every demo project and `seed_calls.py` fixture uses. `GET /calls`, `GET /calls/{conversation_id}`, and `GET /dashboard` all require `project_id` and actually read from that project's own `report_db_name`/`report_collection_name` (see the `projects` collection above), which happens to be this same collection for the seeded demo projects. A project pointing elsewhere must hold documents in this exact shape — CSV export and the automailer are unchanged and still always read this fixed collection.
 
+**Also holds an unrelated, deliberately co-located shape:** AQI-triggered patient advisory-call records (see `patient_calls` below), written here by an external AQI/telephony system, keyed by `call_id` rather than `conversation_id`. `calls/schema_adapters.py`'s schema-shape detection explicitly excludes that shape when sampling (`_PATIENT_ADVISORY_CALL_EXCLUSION`) so it never gets misdetected as an unrecognized raw export; every native-Call query already excludes it implicitly by filtering on `project_id`/`conversation_id`, which those documents don't have.
+
 | Field | Type | Notes |
 |---|---|---|
 | `project_id`, `organization_id` | ObjectId | |
@@ -131,6 +133,54 @@ Permitted-user-configured extra recipients for a project's report (or global, `p
 | `created_at` | datetime | |
 
 Indexes: `project_id`.
+
+### `patients`
+A project's patient roster (`/patients` CRUD). Access is gated purely by project assignment (`ensure_project_access`), same as `calls` — carries no `organization_id` since that check never needs it.
+
+| Field | Type | Notes |
+|---|---|---|
+| `patient_id` | str | unique — server-generated (`PT-0001`, ...), never client-supplied |
+| `project_id` | ObjectId | |
+| `full_name`, `phone_number`, `city`, `condition`, `preferred_language` | str | |
+| `dob` | date | |
+| `risk_flag`, `do_not_call` | bool | |
+| `last_advisory_episode` | datetime \| null | |
+| `is_seeded` | bool | true only for the `seed-patients` demo fixture |
+| `created_at`, `updated_at` | datetime | |
+
+Indexes: `patient_id` (unique); `(project_id, created_at desc)`; `(project_id, condition)`; `(project_id, risk_flag)`.
+
+### `patient_calls` (physically the `calls` collection — see above)
+AQI-triggered patient advisory calls (`/patient-calls` CRUD). `call_id` is the external AQI/telephony system's own identifier — required, unique, never server-generated (mirrors `Call.conversation_id`). Carries no `project_id`; a record's project is whatever project its `patient_id` resolves to in `patients` (looked up per-request, see `patient_calls/repository.py`).
+
+| Field | Type | Notes |
+|---|---|---|
+| `call_id` | str | unique, externally-assigned |
+| `patient_id` | str | references `patients.patient_id` |
+| `phone_number`, `city`, `condition`, `direction`, `status` | str | |
+| `disposition` | str \| null | |
+| `live_aqi_reading` | {value: float, timestamp: str, raw_response: dict} | required |
+| `second_aqi_reading` | same shape \| null | filled in once reconciliation runs |
+| `risk_threshold` | int | the condition's `risk_threshold_aqi` at trigger time |
+| `aqi_reconciliation_delta` | float \| null | |
+| `reading_timestamp` | datetime | |
+| `telephony_triggered` | bool | |
+| `created_at`, `updated_at` | datetime | |
+
+Indexes: `call_id` (unique); `(patient_id, created_at desc)`.
+
+### `risk_thresholds`
+Platform-wide (not project-scoped) condition -> AQI risk-threshold reference table. `/risk-thresholds` CRUD is Admin-only (`risk_threshold.*` permission, granted to no other role).
+
+| Field | Type | Notes |
+|---|---|---|
+| `condition` | str | unique, e.g. `asthma` |
+| `risk_threshold_aqi` | int | |
+| `pollutant` | str | e.g. `pm2_5` |
+| `is_seeded` | bool | true only for the `seed-risk-thresholds` demo fixture |
+| `created_at`, `updated_at` | datetime | |
+
+Indexes: `condition` (unique).
 
 ### `scenario_runs`
 Persisted result of a fixed scenario checklist that backs the dashboard's "scenario measure". **No writer exists in this codebase** — see `docs/KNOWN_LIMITATIONS.md`.

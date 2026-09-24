@@ -89,6 +89,50 @@ async def test_unrecognized_shape_raises_with_actionable_message():
         await resolve_adapter(collection)
 
 
+async def test_patient_advisory_call_shape_is_excluded_from_sampling():
+    """aircare.calls deliberately co-locates PatientCall documents (see
+    patient_calls/model.py) — sampling one of those must never make a
+    native-Call project's collection look unrecognized. Regression test for
+    the exact collision that broke /calls and /dashboard for the demo
+    projects: a lone patient-advisory doc landing in the shared collection
+    made resolve_adapter's single find_one({}) sample it and 422.
+    """
+
+    collection = AsyncMongoMockClient()["detect_db"]["mixed_shape"]
+    await collection.insert_one(
+        {
+            "call_id": "ext-call-1",
+            "patient_id": "PT-0001",
+            "live_aqi_reading": {"value": 60.0, "timestamp": "2026-09-21T15:30:00Z", "raw_response": {}},
+            "status": "APPOINTMENT_INTERESTED",
+        }
+    )
+    await collection.insert_one(
+        {"call_start_time": datetime.now(timezone.utc), "conversation_id": "1", "project_id": "p1"}
+    )
+
+    assert await resolve_adapter(collection) is None
+
+
+async def test_only_patient_advisory_call_docs_present_is_treated_as_empty():
+    """A collection holding nothing but patient-advisory-call documents (no
+    native/raw voice-call doc at all) has nothing for this detector to see —
+    same as a genuinely empty collection, not an error.
+    """
+
+    collection = AsyncMongoMockClient()["detect_db"]["only_advisory_calls"]
+    await collection.insert_one(
+        {
+            "call_id": "ext-call-2",
+            "patient_id": "PT-0002",
+            "live_aqi_reading": {"value": 60.0, "timestamp": "2026-09-21T15:30:00Z", "raw_response": {}},
+            "status": "APPOINTMENT_INTERESTED",
+        }
+    )
+
+    assert await resolve_adapter(collection) is None
+
+
 async def test_detection_result_is_cached_per_collection():
     collection = AsyncMongoMockClient()["detect_db"]["cached"]
     await collection.insert_one({"callStartTime": "2025/02/13 14:56:32 +0000", "call_uid": "1"})
