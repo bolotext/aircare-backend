@@ -33,20 +33,20 @@ from .schema import (
 
 logger = logging.getLogger("booking_router")
 
-router = APIRouter(tags=["booking"])
+router = APIRouter(prefix="/mcp", tags=["booking"])
 
 # ---------------------------------------------------------------------------
 # Identity verification + teleconsultation slot booking
 #
-# Routes below are declared relative to this router (no prefix); app.py
-# mounts it at /api/v1 so the API Gateway's proxy (which always forwards
-# /api/v1/<first-path-segment>/...) can reach it — see
-# api-gateway's app.py::_route_map.
+# Routes below are declared under this router's own /mcp prefix; app.py
+# mounts it at /api/v1, giving /api/v1/mcp/<route> so the API Gateway's proxy
+# (which always forwards /api/v1/<first-path-segment>/...) can reach it via
+# the "mcp" segment — see api-gateway's app.py::_route_map.
 #
 # Two tools the voice agent calls mid-call:
 #   verify_identity(call_id, patient_id, spoken_dob) -> {"verified", "reason"}
 #   reserve_slot(call_id, patient_id, candidate_slot_id) -> {"result", "slot_id", ...}
-# plus GET /next_slot, a non-destructive peek the agent uses to learn what
+# plus GET /mcp/next_slot, a non-destructive peek the agent uses to learn what
 # candidate_slot_id(s) it can propose before calling reserve_slot — it can
 # return more than one upcoming slot (see `count`) so the agent can offer the
 # patient a choice, not just the single earliest one.
@@ -67,17 +67,17 @@ router = APIRouter(tags=["booking"])
 #
 # Response contract
 # ------------------
-# POST /verify_identity -> 200 always: {"verified": bool, "reason": str | None}.
+# POST /mcp/verify_identity -> 200 always: {"verified": bool, "reason": str | None}.
 #   reason is free text, not a fixed enum — "not_found" | "mismatch" |
 #   "lookup_failed" on failure, a next-step hint (e.g. "Continue to
 #   teleconsultation slot booking") on success. Never raises on a failed
 #   verification — only a 422 on missing/invalid call_id/patient_id/spoken_dob,
 #   since "identity didn't verify" is an expected, not an error, outcome.
-# GET /next_slot -> 200: {"available": bool, "slots": [{"slot_id", "date_time",
+# GET /mcp/next_slot -> 200: {"available": bool, "slots": [{"slot_id", "date_time",
 #   "doctor_name"}, ...]}. `slots` is earliest-first and up to `count` long
 #   (query param, default 3, max SLOT_LIST_MAX_COUNT=10); empty when
 #   unavailable. Non-destructive — never pops the queue.
-# POST /reserve_slot -> 200: {"result": "reserved" | "reoffered" | "no_slot",
+# POST /mcp/reserve_slot -> 200: {"result": "reserved" | "reoffered" | "no_slot",
 #   "slot_id", "date_time", "doctor_name"}. `candidate_slot_id` can be any
 #   slot_id /next_slot just returned, not only the first — "reserved" means
 #   that exact slot was claimed; "reoffered" means it couldn't be found

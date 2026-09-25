@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     users_service_url: str = "http://localhost:8001"
     reports_service_url: str | None = None
     mcp_clients_service_url: str | None = None
+    voicebot_service_url: str | None = None
 
     upstream_timeout_seconds: float = 30.0
 
