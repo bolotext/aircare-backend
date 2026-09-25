@@ -1,5 +1,8 @@
 from datetime import datetime, timezone
 
+from beanie import PydanticObjectId
+from bson.errors import InvalidId
+from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError
 
 from reports_service.patient_calls.model import PatientCall
@@ -25,6 +28,24 @@ async def list_paginated(
 
 async def get_by_call_id(call_id: str) -> PatientCall | None:
     return await PatientCall.find_one(PatientCall.call_id == call_id)
+
+
+async def get_by_id(id: str) -> PatientCall | None:
+    """Looks up by Mongo `_id`. Guards two invalid-but-not-exceptional
+    inputs the same way as a genuine miss (404, not 500): a malformed
+    ObjectId string, and an id belonging to a native voice `Call` document
+    (this collection is shared — see model.py — and those lack `call_id`,
+    so parsing one as a `PatientCall` fails required-field validation).
+    """
+
+    try:
+        object_id = PydanticObjectId(id)
+    except (ValueError, TypeError, InvalidId):
+        return None
+    try:
+        return await PatientCall.get(object_id)
+    except ValidationError:
+        return None
 
 
 async def create(*, call_id: str, patient_id: str, **fields) -> PatientCall:

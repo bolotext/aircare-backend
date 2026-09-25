@@ -1,4 +1,4 @@
-.PHONY: install test test-reports seed seed-demo seed-reports-calls seed-reports-patients seed-reports-risk-thresholds seed-scheduler-demo run-users run-gateway run-reports run-reports-scheduler run-scheduler run-users-prod run-gateway-prod run-reports-prod docker-build docker-up docker-down docker-restart
+.PHONY: install test test-reports seed seed-demo seed-reports-calls seed-reports-patients seed-reports-risk-thresholds seed-scheduler-demo run-users run-gateway run-reports run-mcp-clients run-reports-scheduler run-scheduler run-users-prod run-gateway-prod run-reports-prod run-mcp-clients-prod docker-build docker-up docker-down docker-restart
 
 install:
 	@echo 'Installing all workspace packages with uv'
@@ -55,11 +55,17 @@ ifeq ($(shell uname),Darwin)
 	@osascript -e 'tell application "Terminal" to do script "cd $(PWD)/services/users && uv run python main.py serve --reload"'
 	@osascript -e 'tell application "Terminal" to do script "cd $(PWD)/services/api-gateway && uv run python main.py --reload"'
 	@osascript -e 'tell application "Terminal" to do script "cd $(PWD)/services/reports && uv run python main.py serve --reload"'
+	@osascript -e 'tell application "Terminal" to do script "cd $(PWD)/services/mcp_clients && uv run python main.py serve --reload"'
 else
 	@gnome-terminal -- bash -c 'cd $(PWD)/services/users && uv run python main.py serve --reload; exec bash'
 	@gnome-terminal -- bash -c 'cd $(PWD)/services/api-gateway && uv run python main.py --reload; exec bash'
 	@gnome-terminal -- bash -c 'cd $(PWD)/services/reports && uv run python main.py serve --reload; exec bash'
+	@gnome-terminal -- bash -c 'cd $(PWD)/services/mcp_clients && uv run python main.py serve --reload; exec bash'
 endif
+
+run-mcp-clients:
+	@echo 'Running the MCP Clients service locally on :8003 with --reload (dev only; expects a reachable Mongo MCP server and Redis MCP server, see services/mcp_clients/.env)'
+	cd services/mcp_clients && uv run python main.py serve --reload
 
 run-reports-scheduler:
 	@echo 'Running the Reports service automailer scheduler loop (expects a reachable MongoDB and SMTP server, see services/reports/.env)'
@@ -83,6 +89,10 @@ run-gateway-prod:
 run-reports-prod:
 	@echo 'Running the Reports service on :8002 with 2 worker processes, no reload (production-style)'
 	cd services/reports && uv run python main.py serve --workers 2
+
+run-mcp-clients-prod:
+	@echo 'Running the MCP Clients service on :8003 with 2 worker processes, no reload (production-style)'
+	cd services/mcp_clients && uv run python main.py serve --workers 2
 
 docker-build:
 	@echo 'Building all service images'

@@ -27,8 +27,10 @@ _LIST_EXAMPLE = {"items": [_DETAIL_EXAMPLE], "page": 1, "page_size": 20, "total"
 
 def _to_out(call: PatientCall) -> PatientCallOut:
     return PatientCallOut(
+        id=str(call.id),
         call_id=call.call_id,
         patient_id=call.patient_id,
+        patient_name=call.patient_name,
         phone_number=call.phone_number,
         city=call.city,
         condition=call.condition,
@@ -99,6 +101,33 @@ async def list_patient_calls(
 
 
 @router.get(
+    "/by-id/{id}",
+    response_model=SuccessResponse[PatientCallOut],
+    summary="Get one patient advisory call by its Mongo document id",
+    description="""Returns a single advisory-call record, looked up by Mongo `_id` rather than the
+external `call_id` — the id a caller gets back from `patient_name`-driven detail views (e.g. clicking a
+row in a patient-calls list) rather than one already keying off `call_id`.
+
+**Errors:** 403 if the caller isn't permitted to view `project_id`; 404 if no call with that `id` exists
+within `project_id`. Requires `patient_call.view`.""",
+    responses=success_and_error_responses("Patient call found", _DETAIL_EXAMPLE, UNAUTHORIZED_EXAMPLE, FORBIDDEN_EXAMPLE, not_found_example("Patient call")),
+)
+async def get_patient_call_by_id(
+    id: str = Path(..., examples=["6ab61209c2da0ae446c3aa9b"]),
+    project_id: str = Query(..., examples=["6ab4ceafe9f5e5190f56b7e9"]),
+    identity: IdentityContext = Depends(require_permission("patient_call.view")),
+) -> dict:
+    ensure_project_access(identity, project_id)
+    call = await call_repo.get_by_id(id)
+    if call is None:
+        raise NotFoundError("Patient call not found")
+    patient = await patient_repo.get_by_patient_id(call.patient_id, project_id)
+    if patient is None:
+        raise NotFoundError("Patient call not found")
+    return success_response(data=_to_out(call))
+
+
+@router.get(
     "/{call_id}",
     response_model=SuccessResponse[PatientCallOut],
     summary="Get one patient advisory call",
@@ -138,13 +167,15 @@ async def create_patient_call(
     identity: IdentityContext = Depends(require_permission("patient_call.create")),
 ) -> dict:
     ensure_project_access(identity, body.project_id)
-    if await patient_repo.get_by_patient_id(body.patient_id, body.project_id) is None:
+    patient = await patient_repo.get_by_patient_id(body.patient_id, body.project_id)
+    if patient is None:
         raise NotFoundError("Patient not found")
 
     try:
         call = await call_repo.create(
             call_id=body.call_id,
             patient_id=body.patient_id,
+            patient_name=patient.full_name,
             phone_number=body.phone_number,
             city=body.city,
             condition=body.condition,

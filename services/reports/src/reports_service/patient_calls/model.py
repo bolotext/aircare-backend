@@ -43,6 +43,12 @@ class AqiReading(BaseModel):
 class PatientCall(Document):
     call_id: str
     patient_id: str
+    # Denormalized from Patient.full_name at create time (see
+    # router.create_patient_call), same rationale as phone_number/city/
+    # condition below — avoids a join on every list/detail read. Optional
+    # since older records (and any written directly by the external
+    # AQI/telephony system) may predate this field.
+    patient_name: str | None = None
 
     phone_number: str
     city: str

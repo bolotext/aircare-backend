@@ -38,15 +38,31 @@ async def test_create_list_get_update_delete_round_trip(app, client):
     created = create_resp.json()["data"]
     assert created["call_id"] == "ext-call-abc123"
     assert created["patient_id"] == patient.patient_id
+    assert created["patient_name"] == patient.full_name
     assert created["second_aqi_reading"] is None
+    assert created["id"]
 
     list_resp = await client.get("/api/v1/patient-calls", params={"project_id": str(PROJECT)})
     list_body = list_resp.json()["data"]
     assert list_body["total"] == 1
     assert list_body["items"][0]["call_id"] == "ext-call-abc123"
+    assert list_body["items"][0]["patient_name"] == patient.full_name
 
     get_resp = await client.get(f"/api/v1/patient-calls/ext-call-abc123", params={"project_id": str(PROJECT)})
     assert get_resp.json()["data"]["status"] == "APPOINTMENT_INTERESTED"
+
+    get_by_id_resp = await client.get(f"/api/v1/patient-calls/by-id/{created['id']}", params={"project_id": str(PROJECT)})
+    get_by_id_body = get_by_id_resp.json()["data"]
+    assert get_by_id_body["call_id"] == "ext-call-abc123"
+    assert get_by_id_body["patient_name"] == patient.full_name
+
+    missing_id_resp = await client.get(
+        f"/api/v1/patient-calls/by-id/{PydanticObjectId()}", params={"project_id": str(PROJECT)}
+    )
+    assert missing_id_resp.json()["code"] == 404
+
+    bad_id_resp = await client.get("/api/v1/patient-calls/by-id/not-an-object-id", params={"project_id": str(PROJECT)})
+    assert bad_id_resp.json()["code"] == 404
 
     update_resp = await client.patch(
         "/api/v1/patient-calls/ext-call-abc123",

@@ -464,6 +464,7 @@ async def trigger_inya_outbound_call(phone_number: str, patient_id: str, client_
 async def initiate_outbound_advisory_call(patient: dict, reconciled_value: float, aqi_a: dict, aqi_b: dict, delta: float) -> None:
     phone_number = patient.get("phone_number")
     patient_id = patient.get("patient_id")
+    patient_name = patient.get("full_name", None) or "Unknown"
     try:
         existing_calls = await _find("calls", {"phone_number": phone_number}, limit=5, sort={"created_at": -1})
         if any(_is_pending_call(doc) for doc in existing_calls):
@@ -480,6 +481,7 @@ async def initiate_outbound_advisory_call(patient: dict, reconciled_value: float
             {
                 "call_id": client_reference_id,
                 "patient_id": patient_id,
+                "patient_name": patient_name,
                 "project_id": patient.get("project_id"),
                 "phone_number": phone_number,
                 "city": patient.get("city"),

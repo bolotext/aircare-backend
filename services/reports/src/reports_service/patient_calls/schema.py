@@ -14,8 +14,10 @@ _LIVE_READING_EXAMPLE = {
 }
 
 _EXAMPLE = {
+    "id": "6ab61209c2da0ae446c3aa9b",
     "call_id": "4ba506a9-8af0-4415-8d82-9fde7e7215f1",
     "patient_id": "PT-0003",
+    "patient_name": "Narendra Singh Dangi",
     "phone_number": "+917389058485",
     "city": "Bengaluru",
     "condition": "copd",
@@ -47,7 +49,9 @@ class PatientCallCreate(BaseModel):
     unique (this is that system's idempotency key, not ours).
     """
 
-    model_config = ConfigDict(json_schema_extra={"example": {k: v for k, v in _EXAMPLE.items() if k not in ("created_at", "updated_at")}})
+    model_config = ConfigDict(
+        json_schema_extra={"example": {k: v for k, v in _EXAMPLE.items() if k not in ("id", "patient_name", "created_at", "updated_at")}}
+    )
 
     call_id: str = Field(min_length=1, max_length=100, description="Externally-assigned unique call identifier.")
     patient_id: str = Field(description="The patient (business id, e.g. `PT-0003`) this call was placed for.", examples=["PT-0003"])
@@ -92,8 +96,10 @@ class PatientCallUpdate(BaseModel):
 class PatientCallOut(BaseModel):
     model_config = ConfigDict(json_schema_extra={"example": _EXAMPLE})
 
+    id: str = Field(description="Mongo document id — distinct from `call_id`, the external system's own identifier.")
     call_id: str
     patient_id: str
+    patient_name: str | None = None
     phone_number: str
     city: str
     condition: str

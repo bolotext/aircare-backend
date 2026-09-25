@@ -35,11 +35,13 @@ def _route_map() -> dict[str, str | None]:
         "patients": settings.reports_service_url,
         "patient-calls": settings.reports_service_url,
         "risk-thresholds": settings.reports_service_url,
-        # MCP servers (Redis session store, AQI, teleconsultation booking) are
-        # a separate system maintained outside this codebase and are not
-        # proxied here: they speak MCP tool-call semantics, not this
-        # gateway's REST envelope, and are called agent-to-server, not
-        # browser-to-server.
+        # MCP Clients service routes (identity verification + teleconsultation
+        # slot booking) — the mid-call tool API the voice agent calls. The
+        # Redis session-store and AQI-reconciliation MCP servers remain a
+        # separate system outside this codebase and are not proxied here.
+        "verify_identity": settings.mcp_clients_service_url,
+        "next_slot": settings.mcp_clients_service_url,
+        "reserve_slot": settings.mcp_clients_service_url,
     }
 
 
@@ -52,8 +54,8 @@ async def lifespan(app: FastAPI):
 
 _DESCRIPTION = """
 Single entry point for AirCare's backend: a thin reverse proxy that forwards every `/api/v1/*` request to
-the upstream microservice that owns it (Users or Reports — see the route map in `app.py::_route_map`),
-based on the first path segment, and relays that service's response back unmodified.
+the upstream microservice that owns it (Users, Reports, or MCP Clients — see the route map in
+`app.py::_route_map`), based on the first path segment, and relays that service's response back unmodified.
 
 **This gateway does not define its own request/response schemas** — it forwards raw bytes/headers, and
 does no authentication or request validation itself (each upstream service still does its own JWT
