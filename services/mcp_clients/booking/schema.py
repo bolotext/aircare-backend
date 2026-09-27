@@ -44,9 +44,7 @@ class VerifyIdentityResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class NextSlotRequest(BaseModel):
-    call_id: str = Field(..., min_length=1)
-    patient_id: str = Field(..., min_length=1)
-    count: int = Field(3, ge=1, le=10, description="How many upcoming slots to peek (non-destructive). Defaults to 3.")
+    date: str = Field(..., min_length=1, description="Date to fetch available slots for, in any format dateutil can parse (e.g. YYYY-MM-DD).")
 
 
 class SlotInfo(BaseModel):
@@ -57,7 +55,7 @@ class SlotInfo(BaseModel):
 
 class NextSlotResponse(BaseModel):
     available: bool
-    slots: List[SlotInfo] = Field(default_factory=list, description="Earliest-first, up to `count` long.")
+    slots: List[SlotInfo] = Field(default_factory=list, description="Every available slot on the requested date, earliest-first.")
 
 
 # ---------------------------------------------------------------------------
@@ -65,8 +63,6 @@ class NextSlotResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ReserveSlotRequest(BaseModel):
-    call_id: str = Field(..., min_length=1)
-    patient_id: str = Field(..., min_length=1)
     candidate_slot_id: str = Field(..., min_length=1, description="slot_id previously returned by /next_slot that the agent proposed to the caller.")
 
 

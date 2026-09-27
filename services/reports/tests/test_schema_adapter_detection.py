@@ -16,6 +16,7 @@ from reports_service.calls import schema_adapters
 from reports_service.calls.schema_adapters import (
     UnrecognizedReportSchemaError,
     normalize_aircare_calls,
+    normalize_call_logs,
     normalize_report_llm,
     resolve_adapter,
 )
@@ -60,6 +61,44 @@ async def test_detects_aircare_calls_shape_from_temp_date_fallback():
     await collection.insert_one({"tempDate": "27/02/2025", "flow_id": "muthoot_predue_vb_tam"})
 
     assert await resolve_adapter(collection) is normalize_aircare_calls
+
+
+async def test_detects_call_logs_shape_from_wrapped_isodate_string():
+    """Regression test for the bug that broke /calls and /dashboard for Demo
+    Project A: its configured `aircare.call_logs` collection stores
+    `callStartTime` as the literal string "ISODate(...)", which neither
+    `_is_report_llm_shape` nor `_is_aircare_calls_shape` recognized, so every
+    request 422'd with UnrecognizedReportSchemaError before normalize_call_logs
+    existed.
+    """
+
+    collection = AsyncMongoMockClient()["detect_db"]["call_logs_shape"]
+    await collection.insert_one(
+        {"callStartTime": "ISODate(2026-09-25T09:37:55+00:00)", "conversation_id": "1"}
+    )
+
+    assert await resolve_adapter(collection) is normalize_call_logs
+
+
+async def test_call_logs_shape_is_not_misdetected_as_patient_advisory():
+    """Regression test: `call_logs` raw documents carry their own unrelated
+    top-level `call_id` (the voice platform's internal call UUID), not
+    PatientCall's idempotency key. The patient-advisory sampling exclusion
+    must key on `live_aqi_reading` (unique to PatientCall), not `call_id`,
+    or every call_logs document gets excluded from sampling, resolve_adapter
+    sees no sample, and silently treats a populated collection as empty.
+    """
+
+    collection = AsyncMongoMockClient()["detect_db"]["call_logs_with_call_id"]
+    await collection.insert_one(
+        {
+            "callStartTime": "ISODate(2026-09-25T09:37:55+00:00)",
+            "conversation_id": "1",
+            "call_id": "edf540e0-606a-48f1-982d-191338f8655d",
+        }
+    )
+
+    assert await resolve_adapter(collection) is normalize_call_logs
 
 
 async def test_native_call_shape_needs_no_adapter():

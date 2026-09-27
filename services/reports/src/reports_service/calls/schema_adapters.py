@@ -60,6 +60,28 @@ def _to_float(value: object) -> float | None:
         return None
 
 
+_WRAPPED_ISODATE = re.compile(r"^ISODate\((.+)\)$")
+
+
+def _parse_wrapped_isodate(value: str | None) -> datetime | None:
+    """Source format: the literal string "ISODate(2026-09-25T09:37:55+00:00)"
+    — this collection's ingestion pipeline appears to have serialized a
+    Mongo shell `ISODate(...)` constructor call as text instead of storing a
+    real BSON date or the "YYYY/MM/DD HH:MM:SS +0000" string the other two
+    raw shapes use.
+    """
+
+    if not value:
+        return None
+    match = _WRAPPED_ISODATE.match(value)
+    if match is None:
+        return None
+    try:
+        return datetime.fromisoformat(match.group(1))
+    except ValueError:
+        return None
+
+
 def normalize_report_llm(doc: dict, *, project_id: str, organization_id: str) -> dict:
     call_start = _parse_gnani_timestamp(doc.get("callStartTime"))
     if call_start is None and doc.get("tempDate"):
@@ -160,6 +182,60 @@ def normalize_aircare_calls(doc: dict, *, project_id: str, organization_id: str)
     }
 
 
+def normalize_call_logs(doc: dict, *, project_id: str, organization_id: str) -> dict:
+    """`aircare.call_logs` (configured on "proj-a") is another raw export
+    from the same voice-platform CDR shape as report_llm/aircare_calls —
+    same field names for the pieces they all share (`flow_id`,
+    `gnanivb_dial_status`, ...) — but its `callStartTime`/`callConnectedTime`/
+    `callEndTime` are the literal string "ISODate(...)" (see
+    _parse_wrapped_isodate), `tempDate` is `DD/MM/YYYY` (like aircare_calls),
+    and `call_status`/`conversation_id` are already snake_case even though
+    the doc as a whole isn't in this service's own Call schema.
+
+    Same PII exclusion as the other normalizers above, plus this source
+    additionally carries a patient's health condition and location
+    (`user_context.condition`/`city`, top-level `condition`/`city`) —
+    neither is copied into the output or `raw` either, same as
+    name/phone/phone_number/customerPhone/srcPhone/dstPhone/rec_path/
+    conversation_log/patient_id/user_id/disposition_result/
+    post_call_extraction/user_context/call_infra.
+    """
+
+    call_start = _parse_wrapped_isodate(doc.get("callStartTime"))
+    if call_start is None and doc.get("tempDate"):
+        try:
+            call_start = datetime.strptime(doc["tempDate"], "%d/%m/%Y").replace(tzinfo=timezone.utc)
+        except ValueError:
+            call_start = None
+
+    return {
+        "project_id": project_id,
+        "organization_id": organization_id,
+        "conversation_id": str(doc.get("conversation_id") or doc.get("call_uid") or doc["_id"]),
+        "bot_id": doc.get("bot_id") or doc.get("flow_id") or "unknown",
+        "language": doc.get("language") or doc.get("resolved_language") or "unknown",
+        "call_status": doc.get("call_status") or doc.get("callStatus") or "UNKNOWN",
+        "disposition": doc.get("DISPOSITION") or doc.get("STAGE_CODE") or doc.get("gnanivb_dial_status") or "UNKNOWN",
+        "call_start_time": call_start or datetime.now(timezone.utc),
+        "call_connected_time": _parse_wrapped_isodate(doc.get("callConnectedTime")),
+        "call_end_time": _parse_wrapped_isodate(doc.get("callEndTime")),
+        "connected_seconds": _to_float(doc.get("gnanivb_billing_duration")),
+        "tool_failure_count": 0,
+        "raw": {
+            "call_sequence_mapping": doc.get("call_sequence_mapping"),
+            "sequence_number": doc.get("sequence_number"),
+            "answered_seq": doc.get("answered_seq"),
+            "no_answer_seq": doc.get("no_answer_seq"),
+            "stage": doc.get("STAGE_CODE"),
+            "ringing_time_seconds": doc.get("ringingTime"),
+            "setup_time_seconds": doc.get("setupTime"),
+            "hangup_cause_code": doc.get("gnanivb_hangup_cause_code"),
+            "hangup_cause_text": doc.get("gnanivb_hangup_cause_text_tech"),
+            "dial_status": doc.get("gnanivb_dial_status"),
+        },
+    }
+
+
 _YYYY_MM_DD = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DD_MM_YYYY = re.compile(r"^\d{2}/\d{2}/\d{4}$")
 
@@ -206,12 +282,26 @@ def _is_aircare_calls_shape(doc: dict) -> bool:
     return False
 
 
+def _is_call_logs_shape(doc: dict) -> bool:
+    """`aircare.call_logs`-style raw export (see normalize_call_logs): its
+    `callStartTime`, when present, is the literal string
+    "ISODate(2026-09-25T09:37:55+00:00)" — no other recognized shape ever
+    produces that, so this is checked ahead of the tempDate-only fallbacks
+    both other detectors share (a `tempDate`-only sample stays ambiguous
+    with `aircare_calls`, which already owns that fallback).
+    """
+
+    call_start = doc.get("callStartTime")
+    return isinstance(call_start, str) and _WRAPPED_ISODATE.match(call_start) is not None
+
+
 # Order matters: each project's sample document is checked against these in
 # turn, first match wins. Add a new (predicate, normalizer) pair here for a
 # genuinely new raw shape — no other file needs to change to onboard a new
 # project on an already-recognized shape (see module docstring).
 _DETECTORS: list[tuple[Callable[[dict], bool], Callable[..., dict]]] = [
     (_is_report_llm_shape, normalize_report_llm),
+    (_is_call_logs_shape, normalize_call_logs),
     (_is_aircare_calls_shape, normalize_aircare_calls),
 ]
 
@@ -248,7 +338,18 @@ _detected_cache: dict[tuple[str, str], Callable[..., dict] | None] = {}
 # export and 422 every native-Call project pointed at it (e.g. the demo
 # projects) — so detection explicitly excludes that shape when picking a
 # sample, exactly as if those documents weren't in this collection at all.
-_PATIENT_ADVISORY_CALL_EXCLUSION = {"call_id": {"$exists": False}, "live_aqi_reading": {"$exists": False}}
+#
+# Keyed on `live_aqi_reading` alone (a required PatientCall field — see
+# patient_calls/model.py) rather than also excluding on `call_id`: the
+# `call_logs` raw shape (see normalize_call_logs) turned out to carry its
+# own unrelated top-level `call_id` (the voice platform's internal call
+# UUID, not PatientCall's idempotency key), so excluding on `call_id`
+# existence excluded every one of *its* documents too — resolve_adapter
+# sampled nothing, treated the collection as empty, and silently fell back
+# to the no-adapter path, which filters on a `project_id` field this raw
+# shape doesn't have and returns zero calls with no error. `live_aqi_reading`
+# is the one field no CDR export shape uses, so it alone is unambiguous.
+_PATIENT_ADVISORY_CALL_EXCLUSION = {"live_aqi_reading": {"$exists": False}}
 
 
 async def resolve_adapter(collection: AsyncIOMotorCollection) -> Callable[..., dict] | None:
