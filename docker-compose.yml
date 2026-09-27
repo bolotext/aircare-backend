@@ -8,13 +8,10 @@ services:
     env_file:
       - services/users/.env
     environment:
-      MONGO_URI: mongodb://mongo:27017
       # Worker process count (no --reload in this production entrypoint —
       # see services/users/entrypoint.sh). Defaults to 2 if unset; override
       # here per environment, e.g. WEB_CONCURRENCY: "4".
       # WEB_CONCURRENCY: "2"
-    depends_on:
-      - mongo
     networks:
       - aircare-network
     restart: always
@@ -25,12 +22,13 @@ services:
       dockerfile: services/api-gateway/Dockerfile
     container_name: aircare_api_gateway
     ports:
-      - 8000:8000
+      - 45454:8000
     env_file:
       - services/api-gateway/.env
     environment:
       USERS_SERVICE_URL: http://users:8001
       REPORTS_SERVICE_URL: http://reports:8002
+      MCP_CLIENTS_SERVICE_URL: http://mcp-clients:8003
       # Worker process count (no --reload in this production entrypoint —
       # see services/api-gateway/entrypoint.sh). Defaults to 2 if unset;
       # override here per environment, e.g. WEB_CONCURRENCY: "4".
@@ -38,6 +36,28 @@ services:
     depends_on:
       - users
       - reports
+      - mcp-clients
+    networks:
+      - aircare-network
+    restart: always
+
+  mcp-clients:
+    build:
+      context: .
+      dockerfile: services/mcp_clients/Dockerfile
+    container_name: aircare_mcp_clients
+    ports:
+      - 45455:8003
+    env_file:
+      - services/mcp_clients/.env
+    environment:
+      # Override the .env file's localhost-based connection strings with the
+      # docker-network hostnames (see services/mcp_clients/.env: both MCP
+      # server subprocesses are spawned with these in their own env).
+      # REDIS_MCP_URL: redis://redis:6379/0
+      # ^ no "redis" service exists in this compose file yet — add one and
+      # uncomment this once it does; until then this points at .env's
+      # localhost default, which won't resolve inside the container.
     networks:
       - aircare-network
     restart: always
@@ -47,19 +67,15 @@ services:
       context: .
       dockerfile: services/reports/Dockerfile
     container_name: aircare_reports
-    ports:
-      - 8002:8002
     env_file:
       - services/reports/.env
     environment:
-      MONGO_URI: mongodb://mongo:27017
       USERS_SERVICE_URL: http://users:8001
       # Worker process count (no --reload in this production entrypoint —
       # see services/reports/entrypoint.sh). Defaults to 2 if unset; override
       # here per environment, e.g. WEB_CONCURRENCY: "4".
       # WEB_CONCURRENCY: "2"
     depends_on:
-      - mongo
       - users
     networks:
       - aircare-network
@@ -68,6 +84,3 @@ services:
 networks:
   aircare-network:
     driver: bridge
-
-volumes:
-  mongo_data:

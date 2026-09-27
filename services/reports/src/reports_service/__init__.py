@@ -43,10 +43,19 @@ def _serve(log_level: str, reload: bool = False, workers: int | None = None) -> 
     )
 
 
+def _print_mongo_config() -> None:
+    from common.mongo_utils import mongo_config_summary
+    from reports_service.core.config import get_settings
+
+    settings = get_settings()
+    print(f"seed: {mongo_config_summary(settings.mongo_uri, settings.mongo_db_name)}")
+
+
 async def _seed_calls(project_ids: list[str], organization_id: str, ref_date: str | None, calls_per_project: int) -> None:
     from reports_service.db.mongodb import close_db, get_client, init_db
     from reports_service.seed.seed_calls import seed_calls
 
+    _print_mongo_config()
     await init_db(get_client())
     reference_day = date.fromisoformat(ref_date) if ref_date else None
     await seed_calls(project_ids, organization_id, reference_day, calls_per_project)
@@ -57,6 +66,7 @@ async def _seed_patients(project_a_id: str, project_b_id: str) -> None:
     from reports_service.db.mongodb import close_db, get_client, init_db
     from reports_service.seed.seed_patients import seed_patients
 
+    _print_mongo_config()
     await init_db(get_client())
     await seed_patients(project_a_id, project_b_id)
     await close_db()
@@ -66,6 +76,7 @@ async def _seed_risk_thresholds() -> None:
     from reports_service.db.mongodb import close_db, get_client, init_db
     from reports_service.seed.seed_risk_thresholds import seed_risk_thresholds
 
+    _print_mongo_config()
     await init_db(get_client())
     await seed_risk_thresholds()
     await close_db()

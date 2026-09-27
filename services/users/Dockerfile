@@ -17,8 +17,9 @@ COPY pyproject.toml uv.lock /app/
 COPY libs/common/pyproject.toml /app/libs/common/pyproject.toml
 COPY services/users/pyproject.toml /app/services/users/pyproject.toml
 COPY services/api-gateway/pyproject.toml /app/services/api-gateway/pyproject.toml
-COPY services/agents/pyproject.toml /app/services/agents/pyproject.toml
 COPY services/reports/pyproject.toml /app/services/reports/pyproject.toml
+COPY services/mcp_clients/pyproject.toml /app/services/mcp_clients/pyproject.toml
+COPY services/scheduler/pyproject.toml /app/services/scheduler/pyproject.toml
 
 # --no-install-workspace: don't try to build/editable-install any workspace
 # member yet (their src/ isn't copied into this layer) — just resolve and

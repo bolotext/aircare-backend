@@ -24,7 +24,9 @@ Run with (from the project root, with services/scheduler/.env loaded):
 Config (.env, os.getenv only — never hardcoded, never logged)
 ---------------------------------------------------------------
 MONGO_URI                     Mongo connection string (default mongodb://localhost:27017,
-                               matching docker-compose.yml's mongo service). Never logged.
+                               matching docker-compose.yml's mongo service). Never logged
+                               raw — only a credential-redacted summary (see
+                               redacted_mongo_uri()/mongo_config_summary()) is ever printed.
 MONGO_DB_NAME                 Mongo database name (default "aircare").
 AQI_POLL_INTERVAL_MINUTES     Sweep interval, in minutes (default 30).
 AQI_FRESHNESS_WINDOW_MINUTES  Max accepted AQI reading age, in minutes (default 60).
@@ -55,6 +57,8 @@ from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from pymongo.errors import PyMongoError
 from common.log_utils import setup_logger
+from common.mongo_utils import mongo_config_summary as _mongo_config_summary
+from common.mongo_utils import redact_mongo_uri
 
 logger = setup_logger(__name__)
 
@@ -168,6 +172,17 @@ _MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 _MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "aircare")
 
 _client: AsyncIOMotorClient | None = None
+
+
+def redacted_mongo_uri() -> str:
+    """MONGO_URI with any userinfo (user:pass@) masked — safe to log/print,
+    unlike the raw value (see module docstring: MONGO_URI itself is never
+    logged raw, since it may carry credentials)."""
+    return redact_mongo_uri(_MONGO_URI)
+
+
+def mongo_config_summary() -> str:
+    return _mongo_config_summary(_MONGO_URI, _MONGO_DB_NAME)
 
 
 def get_db() -> AsyncIOMotorDatabase:

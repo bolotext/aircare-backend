@@ -1,6 +1,7 @@
 from beanie import PydanticObjectId
 from common.enums import Role
 from common.log_utils import setup_logger
+from common.mongo_utils import mongo_config_summary
 
 from users_service.core.config import get_settings
 from users_service.core.security import hash_password
@@ -158,6 +159,8 @@ async def seed_bootstrap_admin() -> None:
 
 async def seed_all() -> None:
     """Idempotent: safe to run on every startup and via a manual `python main.py seed`."""
+    settings = get_settings()
+    logger.info("seed: %s", mongo_config_summary(settings.mongo_uri, settings.mongo_db_name))
     await seed_roles()
     await seed_permissions()
     await seed_bootstrap_admin()
@@ -169,6 +172,8 @@ async def seed_demo_data() -> None:
     — a ready-made fixture proving project-level isolation. Run via
     `python main.py seed-demo`, independent of `seed_all()`.
     """
+    settings = get_settings()
+    logger.info("seed-demo: %s", mongo_config_summary(settings.mongo_uri, settings.mongo_db_name))
     org = await organization_repo.get_by_slug(DEMO_ORG_SLUG)
     if org is None:
         org = await organization_repo.create_organization(

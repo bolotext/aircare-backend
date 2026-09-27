@@ -727,6 +727,7 @@ async def seed_risk_thresholds(db) -> int:
 
 
 async def seed() -> None:
+    logger.info("seed: %s", scheduler.mongo_config_summary())
     db = scheduler.get_db()
     projects_inserted = await seed_projects(db)
     patients_inserted = await seed_patients(db)
