@@ -7,11 +7,6 @@ services:
     container_name: aircare_users
     env_file:
       - services/users/.env
-    environment:
-      # Worker process count (no --reload in this production entrypoint —
-      # see services/users/entrypoint.sh). Defaults to 2 if unset; override
-      # here per environment, e.g. WEB_CONCURRENCY: "4".
-      # WEB_CONCURRENCY: "2"
     networks:
       - aircare-network
     restart: always
@@ -50,14 +45,6 @@ services:
       - 45455:8003
     env_file:
       - services/mcp_clients/.env
-    environment:
-      # Override the .env file's localhost-based connection strings with the
-      # docker-network hostnames (see services/mcp_clients/.env: both MCP
-      # server subprocesses are spawned with these in their own env).
-      # REDIS_MCP_URL: redis://redis:6379/0
-      # ^ no "redis" service exists in this compose file yet — add one and
-      # uncomment this once it does; until then this points at .env's
-      # localhost default, which won't resolve inside the container.
     networks:
       - aircare-network
     restart: always
