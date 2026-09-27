@@ -24,8 +24,15 @@ Required env vars (.env, os.getenv only — never hardcoded, never logged)
 --------------------------------------------------------------------------
 MDB_MCP_CONNECTION_STRING   Mongo connection string. Exported only into the
                              MCP server subprocess's environment.
-MDB_MCP_SERVER_COMMAND       Launch command for the MCP server (default: npx).
-MDB_MCP_SERVER_ARGS          Launch args (default: "-y mongodb-mcp-server").
+MDB_MCP_SERVER_COMMAND       Launch command for the MCP server (default:
+                             mongodb-mcp-server, installed globally at image
+                             build time — see services/mcp_clients/Dockerfile.
+                             Not `npx -y mongodb-mcp-server`: that re-resolves
+                             and re-extracts the package on every launch, and
+                             this service's multiple uvicorn workers racing to
+                             populate the same npx cache on first request has
+                             corrupted the install in practice).
+MDB_MCP_SERVER_ARGS          Launch args (default: "").
 MDB_MCP_DB_NAME              Database name scoped into every find/insert (default: aircare).
 MCP_CALL_TIMEOUT_SECONDS     Bounded per-call timeout, seconds (default: 3).
 
@@ -108,8 +115,8 @@ class _MongoMCPClient:
         self._loop.run_forever()
 
     async def _async_init(self):
-        command = os.getenv("MDB_MCP_SERVER_COMMAND", "npx")
-        args = os.getenv("MDB_MCP_SERVER_ARGS", "-y mongodb-mcp-server").split()
+        command = os.getenv("MDB_MCP_SERVER_COMMAND", "mongodb-mcp-server")
+        args = os.getenv("MDB_MCP_SERVER_ARGS", "").split()
         # get_default_environment() (mcp.client.stdio) only inherits a small,
         # safe allow-list (PATH, HOME, ...) — NOT this process's full
         # environment — so MDB_MCP_CONNECTION_STRING has to be handed to the
