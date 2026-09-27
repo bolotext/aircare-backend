@@ -78,7 +78,7 @@ def create_app() -> FastAPI:
     # route map below) — neither upstream service sets CORS headers itself.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_allowed_origins_list,
+        allow_origins=["*"],
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
