@@ -24,7 +24,11 @@ from pydantic import BaseModel, Field
 class VerifyIdentityRequest(BaseModel):
     call_id: str = Field(..., min_length=1)
     patient_id: str = Field(..., min_length=1)
-    spoken_dob: str = Field(..., min_length=1, description="Date of birth as spoken by the caller, in any format dateutil can parse.")
+    spoken_dob: str = Field(
+        ...,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+        description="Date of birth as spoken by the caller, normalized to ISO format YYYY-MM-DD (e.g. \"2004-04-27\").",
+    )
 
 
 class VerifyIdentityResponse(BaseModel):
