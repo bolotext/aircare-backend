@@ -63,7 +63,8 @@ async def run_scheduler_loop(users_http_client: httpx.AsyncClient) -> None:
     service (this loop runs as a standalone process — see
     reports_service.__init__._schedule — so it doesn't share the API
     server's app.state.users_http_client), used to resolve each scope's own
-    configured report db/collection (see core.deps.resolve_collection_for_project).
+    configured report db/collection and schema adapter (see
+    core.deps.resolve_project_source_for_client).
     """
 
     settings = get_settings()

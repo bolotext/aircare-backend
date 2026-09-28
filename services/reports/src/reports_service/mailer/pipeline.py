@@ -9,7 +9,7 @@ from uuid import uuid4
 import httpx
 
 from reports_service.calls.repository import CallFilter
-from reports_service.core.deps import resolve_collection_for_project
+from reports_service.core.deps import resolve_project_source_for_client
 from reports_service.mailer.render import render_report_html
 from reports_service.mailer.send_mail import send_mail
 from reports_service.mailer.window import run_key_date_component
@@ -35,9 +35,10 @@ async def run_report(
     triggered_by: ReportRunTrigger,
     # Optional: the caller's shared httpx client to the Users service, used
     # to resolve a single-project scope's own configured report
-    # db/collection (see core.deps.resolve_collection_for_project) instead of
-    # the fixed shared `calls` collection. None (the default, and what every
-    # existing caller that doesn't pass one gets) falls back to that fixed
+    # db/collection and schema adapter (see
+    # core.deps.resolve_project_source_for_client) instead of the fixed
+    # shared `calls` collection. None (the default, and what every existing
+    # caller that doesn't pass one gets) falls back to that fixed
     # collection, same as before; scope="all" always does too, since a
     # combined multi-project report has no single project db/collection to
     # resolve.
@@ -79,11 +80,16 @@ async def run_report(
     run = await report_repo.mark_status(run, "running")
 
     collection = None
+    adapter = None
+    organization_id = None
     if scope != "all" and users_http_client is not None:
-        collection = await resolve_collection_for_project(users_http_client, scope)
+        source = await resolve_project_source_for_client(users_http_client, scope)
+        collection = source.collection
+        adapter = source.adapter
+        organization_id = source.organization_id
 
     call_filter = CallFilter(project_ids=_scope_to_project_ids(scope), date_from=window_start, date_to=window_end)
-    metrics = await compute_metrics(call_filter, collection=collection)
+    metrics = await compute_metrics(call_filter, collection=collection, adapter=adapter, organization_id=organization_id)
     html = render_report_html(
         scope_label=_scope_label(scope), window_start=window_start, window_end=window_end, metrics=metrics
     )

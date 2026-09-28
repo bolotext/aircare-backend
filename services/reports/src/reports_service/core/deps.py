@@ -40,24 +40,6 @@ def ensure_project_access(identity: IdentityContext, project_id: str) -> None:
         raise ForbiddenError("You do not have access to this project")
 
 
-async def resolve_collection_for_project(http_client: httpx.AsyncClient, project_id: str) -> AsyncIOMotorCollection:
-    """Resolves a project's own configured report db/collection (see
-    users_service.projects.model.Project) and returns the raw Mongo
-    collection to query, reusing the single Mongo connection this service
-    already holds (see db.mongodb.get_client) rather than opening a new one.
-
-    Used by any non-request caller — the automailer pipeline, called both
-    from the manual `/run` route and the standalone scheduler process —
-    that needs the same per-project collection resolution but has an
-    httpx.AsyncClient instead of a Request to resolve it from. Doesn't
-    resolve a schema adapter the way resolve_project_source (below) does:
-    the automailer only reads native-Call-schema collections today.
-    """
-
-    config = await get_project_config(http_client, project_id)
-    return get_client()[config.report_db_name][config.report_collection_name]
-
-
 @dataclass(frozen=True)
 class ProjectCallSource:
     """Everything a route needs to read a project's configured report data,
@@ -73,6 +55,36 @@ class ProjectCallSource:
     collection: AsyncIOMotorCollection
     organization_id: str
     adapter: Callable[..., dict] | None
+
+
+async def resolve_project_source_for_client(http_client: httpx.AsyncClient, project_id: str) -> ProjectCallSource:
+    """Same resolution as resolve_project_source (below) — a project's
+    configured report db/collection plus, when that collection isn't
+    already in this service's own Call schema, the adapter that normalizes
+    it — but for a non-request caller. Used by the automailer pipeline,
+    called both from the manual `/run` route and the standalone scheduler
+    process, which has an httpx.AsyncClient instead of a Request to resolve
+    it from.
+
+    Every reader of a project's report collection — dashboard, /calls,
+    export, and this one — must resolve the adapter this way: skipping it
+    (as this function used to, under the name resolve_collection_for_project)
+    silently queries an unrecognized-schema collection using the native
+    Call field names and matches nothing, producing an all-zero report
+    instead of an error.
+    """
+
+    config = await get_project_config(http_client, project_id)
+    collection = get_client()[config.report_db_name][config.report_collection_name]
+    try:
+        adapter = await resolve_adapter(collection)
+    except UnrecognizedReportSchemaError as exc:
+        raise UnprocessableEntityError(
+            "This project's configured report collection is misconfigured: its data doesn't match a "
+            "recognized schema.",
+            details={"report_db_name": exc.db_name, "report_collection_name": exc.collection_name},
+        ) from exc
+    return ProjectCallSource(collection=collection, organization_id=config.organization_id, adapter=adapter)
 
 
 async def resolve_project_source(request: Request, project_id: str) -> ProjectCallSource:
@@ -94,14 +106,4 @@ async def resolve_project_source(request: Request, project_id: str) -> ProjectCa
     check too.
     """
 
-    config = await get_project_config(request.app.state.users_http_client, project_id)
-    collection = get_client()[config.report_db_name][config.report_collection_name]
-    try:
-        adapter = await resolve_adapter(collection)
-    except UnrecognizedReportSchemaError as exc:
-        raise UnprocessableEntityError(
-            "This project's configured report collection is misconfigured: its data doesn't match a "
-            "recognized schema.",
-            details={"report_db_name": exc.db_name, "report_collection_name": exc.collection_name},
-        ) from exc
-    return ProjectCallSource(collection=collection, organization_id=config.organization_id, adapter=adapter)
+    return await resolve_project_source_for_client(request.app.state.users_http_client, project_id)

@@ -205,8 +205,9 @@ async def trigger_manual_run(
         recipients=recipients,
         triggered_by="manual",
         # A single-project scope reads from that project's own configured
-        # report db/collection, same as /calls, /dashboard and /export.csv
-        # (see core.deps.resolve_collection_for_project); getattr guards
+        # report db/collection and schema adapter, same as /calls,
+        # /dashboard and /export.csv (see
+        # core.deps.resolve_project_source_for_client); getattr guards
         # against app.state.users_http_client never being set, which is only
         # the case for a test app whose lifespan hasn't run.
         users_http_client=getattr(request.app.state, "users_http_client", None),
