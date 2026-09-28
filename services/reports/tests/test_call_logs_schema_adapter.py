@@ -119,6 +119,19 @@ async def test_call_detail_omits_pii_and_health_data_from_raw_but_keeps_conversa
         assert key not in data["raw"]
     assert data["raw"]["hangup_cause_code"] == "16"
     assert data["raw"]["conversation_log"] == [{"role": "user", "content": "confidential patient detail"}]
+    assert data["recording_available"] is True
+
+
+async def test_call_detail_recording_available_is_false_without_a_resolvable_recording(app, client):
+    collection = AsyncMongoMockClient()["aircare"]["call_logs"]
+    await collection.insert_one(_raw_call_logs_doc(flow_id=None))
+
+    _override_call_logs_source(app, collection)
+    app.dependency_overrides[get_current_identity] = lambda: make_identity("ADMIN")
+
+    resp = await client.get("/api/v1/calls/1790329075540158485", params={"project_id": str(PROJECT)})
+    data = resp.json()["data"]
+    assert data["recording_available"] is False
 
 
 async def test_dashboard_metrics_computed_in_python_for_call_logs(app, client):

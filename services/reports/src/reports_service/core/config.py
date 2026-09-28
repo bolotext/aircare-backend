@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     alert_api_url: str = ""
     alert_api_timeout_seconds: float = 10.0
 
+    # Internal audio server GET /calls/{conversation_id}/recording proxies to
+    # (see calls/recording.py) — private-network-only, no auth of its own,
+    # so this service's own project RBAC is the only access control a
+    # recording gets. Without it, the recording route returns 502.
+    audio_server_url: str = ""
+    audio_server_timeout_seconds: float = 15.0
+
     # Daily send time, Asia/Kolkata hour-of-day (0-23).
     report_send_hour_ist: int = 6
     # How often the scheduler loop wakes up to check whether it's time to

@@ -89,3 +89,5 @@ async def test_call_detail_includes_raw_transcript(app, client):
     resp = await client.get("/api/v1/calls/detail-1", params={"project_id": str(PROJECT)})
     data = resp.json()["data"]
     assert data["raw"]["conversation_log"][0]["content"] == "hi"
+    # A native-Call-schema project (no adapter) has no known recording source.
+    assert data["recording_available"] is False

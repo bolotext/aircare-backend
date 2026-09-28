@@ -51,12 +51,18 @@ class CallDetail(CallListItem):
                 **CallListItem.model_config["json_schema_extra"]["example"],
                 "organization_id": "6aae5deae9a48c4dc62aa397",
                 "raw": {"conversation_log": [{"role": "assistant", "content": "Hello, how can I help you today?"}]},
+                "recording_available": True,
             }
         }
     )
 
     organization_id: str = Field(description="The organization (Mongo ObjectId) that owns this call's project.")
     raw: dict = Field(description="Project-specific operational detail not modeled as typed fields above (e.g. conversation transcript, event timeline). PII fields, if any, have already been stripped by the source's schema adapter before this response is built.")
+    recording_available: bool = Field(
+        description="Whether `GET /calls/{conversation_id}/recording` has a recording to serve for this call — "
+        "lets a caller decide to fetch it right away instead of waiting for a separate user action. Always "
+        "`false` for a project whose configured source has no known recording (see that route's docs)."
+    )
 
 
 class PaginatedCalls(BaseModel):

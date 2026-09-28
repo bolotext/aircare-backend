@@ -4,10 +4,11 @@ from common.errors import NotFoundError
 from common.openapi import FORBIDDEN_EXAMPLE, UNAUTHORIZED_EXAMPLE, not_found_example, success_and_error_responses
 from common.responses import success_response
 from common.schemas import SuccessResponse
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Path, Query, Response
 
 from reports_service.calls import repository as call_repo
 from reports_service.calls.model import Call
+from reports_service.calls.recording import fetch_recording_audio, resolve_recording_ref
 from reports_service.calls.repository import CallFilter, day_range_bounds
 from reports_service.calls.schema import CallDetail, CallListItem, PaginatedCalls
 from reports_service.core.config import get_settings
@@ -41,8 +42,13 @@ def _to_list_item(call: Call) -> CallListItem:
     )
 
 
-def _to_detail(call: Call) -> CallDetail:
-    return CallDetail(**_to_list_item(call).model_dump(), organization_id=str(call.organization_id), raw=call.raw)
+def _to_detail(call: Call, *, recording_available: bool) -> CallDetail:
+    return CallDetail(
+        **_to_list_item(call).model_dump(),
+        organization_id=str(call.organization_id),
+        raw=call.raw,
+        recording_available=recording_available,
+    )
 
 
 @router.get(
@@ -124,6 +130,9 @@ async def list_calls(
 (conversation transcript, event timeline, tool results).
 
 **When to use:** rendering a call-detail view after the caller picked a row from `GET /calls`.
+`recording_available` tells the caller whether to immediately follow up with
+`GET /calls/{conversation_id}/recording` (e.g. to auto-load playback) rather than showing a control that
+would just 404.
 
 **Required inputs:** `conversation_id` (path) and `project_id` (query) — both are required because a call's
 `conversation_id` alone is not guaranteed unique across every project's configured data source; the pair
@@ -151,4 +160,45 @@ async def get_call(
     )
     if call is None:
         raise NotFoundError("Call not found")
-    return success_response(data=_to_detail(call))
+    ref = await resolve_recording_ref(source.collection, source.adapter, project_id, source.organization_id, conversation_id)
+    return success_response(data=_to_detail(call, recording_available=ref is not None))
+
+
+@router.get(
+    "/{conversation_id}/recording",
+    summary="Stream a call's audio recording",
+    description="""Proxies this call's recording from the internal audio server — the caller's browser never
+    talks to that (unauthenticated, private-network-only) service directly; this service's own project RBAC
+    is the only access control a recording gets.
+
+    **When to use:** a "play recording" control on the call-detail view, after `GET /calls/{conversation_id}`.
+
+    **Processing behavior:** returns raw audio bytes on success (`Content-Type` as reported by the audio
+    server, `audio/wav` if it doesn't say). Only available for a project whose configured source is a raw CDR
+    export (report_llm/call_logs/aircare_calls-shaped) — seed/demo data and any other native-Call-schema
+    project has no known recording. Requires `report.view` and access to `project_id`, same as call detail.
+
+    **Errors:** 403 if the caller isn't permitted to view `project_id`; 404 if the call doesn't exist or has
+    no known recording; 502 if the internal audio server is unreachable or errors.""",
+    responses={
+        200: {
+            "description": "Recording audio bytes.",
+            "content": {"audio/wav": {"schema": {"type": "string", "format": "binary"}}},
+        },
+        401: {"content": {"application/json": {"example": UNAUTHORIZED_EXAMPLE}}},
+        403: {"content": {"application/json": {"example": FORBIDDEN_EXAMPLE}}},
+        404: {"content": {"application/json": {"example": not_found_example("Call")}}},
+    },
+)
+async def get_call_recording(
+    conversation_id: str = Path(..., description="The call's unique conversation identifier.", examples=["1789455660779658485"]),
+    project_id: str = Query(..., description="The project (Mongo ObjectId) this call belongs to.", examples=["6aae5deae9a48c4dc62aa398"]),
+    identity: IdentityContext = Depends(require_permission("report.view")),
+    source: ProjectCallSource = Depends(resolve_project_source),
+) -> Response:
+    ensure_project_access(identity, project_id)
+    ref = await resolve_recording_ref(source.collection, source.adapter, project_id, source.organization_id, conversation_id)
+    if ref is None:
+        raise NotFoundError("No recording available for this call")
+    audio_bytes, content_type = await fetch_recording_audio(ref)
+    return Response(content=audio_bytes, media_type=content_type)

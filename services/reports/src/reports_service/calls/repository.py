@@ -196,6 +196,31 @@ async def get_by_conversation_id(
     return Call.model_validate(doc) if doc is not None else None
 
 
+async def get_with_raw_source_by_conversation_id(
+    conversation_id: str,
+    project_id: str,
+    collection: AsyncIOMotorCollection,
+    adapter: Callable[..., dict],
+    organization_id: str | None = None,
+) -> tuple[Call, dict] | None:
+    """Adapter-path variant of get_by_conversation_id that also returns the
+    original raw source document alongside the normalized Call — for a
+    caller (see calls.recording) that needs a raw field the normalizer
+    deliberately excludes from Call/its `raw` output, e.g. recording
+    lookup's `flow_id`/`call_uid` (schema_adapters strips the `rec_path`
+    field these reconstruct, as PII — see its module docstring). Only
+    meaningful on the adapter path: a native-Call-schema document already
+    IS its own "raw" representation (see get_by_conversation_id).
+    """
+
+    raw_docs = await collection.find({}).to_list(None)
+    for doc in raw_docs:
+        normalized = Call.model_validate(adapter(doc, project_id=project_id, organization_id=organization_id or ""))
+        if normalized.conversation_id == conversation_id:
+            return normalized, doc
+    return None
+
+
 async def upsert_call_from_payload(payload: dict) -> Call:
     """Idempotent, upsert-by-conversation_id write used both by the seed
     script and by the dedup/ordering tests standing in for a future live
