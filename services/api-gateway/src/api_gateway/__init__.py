@@ -36,7 +36,7 @@ def main() -> None:
     uvicorn.run(
         "api_gateway.app:app",
         host="0.0.0.0",
-        port=8000,
+        port=45451,
         log_level=args.log_level.lower(),
         reload=args.reload,
         reload_dirs=[str(_SERVICE_SRC_DIR), str(_COMMON_SRC_DIR)] if args.reload else None,

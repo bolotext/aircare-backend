@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # Upstream service base URLs. Only `users_service_url` is required today.
-    users_service_url: str = "http://localhost:8001"
+    users_service_url: str = "http://localhost:45452"
     reports_service_url: str | None = None
     mcp_clients_service_url: str | None = None
     voicebot_service_url: str | None = None

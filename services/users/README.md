@@ -1,7 +1,7 @@
 # Users Service
 
 Owns organizations (tenants), users, roles, and JWT-based auth for the
-platform. Runs on `:8001`. See the [repo root README](../../README.md) for
+platform. Runs on `:45452`. See the [repo root README](../../README.md) for
 how this fits into the overall microservices layout.
 
 ## Stack
@@ -72,7 +72,7 @@ uv sync                 # from the repo root — this is a workspace member
 
 ```bash
 uv run python main.py seed    # idempotent: seeds the 3 fixed roles + bootstrap Admin
-uv run python main.py serve   # starts the API on :8001
+uv run python main.py serve   # starts the API on :45452
 ```
 
 ### Tests
@@ -86,16 +86,16 @@ and that only the global Admin can manage users across organizations.
 
 ### API docs
 
-`http://localhost:8001/docs` (Swagger) and `http://localhost:8001/openapi.json`.
+`http://localhost:45452/docs` (Swagger) and `http://localhost:45452/openapi.json`.
 
 ## Curl walkthrough
 
 Admin creates an org, then a Supervisor and a Viewer user in it. Talking to
-this service directly on `:8001`; swap the base URL for
-`http://localhost:8000` to go through the API Gateway instead.
+this service directly on `:45452`; swap the base URL for
+`http://localhost:45451` to go through the API Gateway instead.
 
 ```bash
-BASE=http://localhost:8001/api/v1
+BASE=http://localhost:45452/api/v1
 
 # 1. Log in as the bootstrap Admin (seeded via BOOTSTRAP_ADMIN_* env vars)
 ADMIN_TOKEN=$(curl -s -X POST $BASE/auth/login \

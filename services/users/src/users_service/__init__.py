@@ -32,7 +32,7 @@ def _serve(log_level: str, reload: bool = False, workers: int | None = None) -> 
     uvicorn.run(
         "users_service.app:app",
         host="0.0.0.0",
-        port=8001,
+        port=45452,
         log_level=log_level.lower(),
         reload=reload,
         reload_dirs=[str(_SERVICE_SRC_DIR), str(_COMMON_SRC_DIR)] if reload else None,

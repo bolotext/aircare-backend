@@ -6,9 +6,9 @@ Microservice backend for RBAC-gated call reporting: a dashboard with project-sco
 
 | Service | Port | Owns |
 |---|---|---|
-| `api-gateway` | 8000 | Reverse proxy only — no auth logic; each downstream service verifies its own JWT/RBAC. |
-| `users` | 8001 | Organizations, users, roles/permissions, projects & project assignments, JWT auth, `/internal/introspect`. |
-| `reports` | 8002 | Call data, dashboard metrics, CSV export, automailer (scheduler + manual trigger + recipients). |
+| `api-gateway` | 45451 | Reverse proxy only — no auth logic; each downstream service verifies its own JWT/RBAC. |
+| `users` | 45452 | Organizations, users, roles/permissions, projects & project assignments, JWT auth, `/internal/introspect`. |
+| `reports` | 45454 | Call data, dashboard metrics, CSV export, automailer (scheduler + manual trigger + recipients). |
 
 MCP tool servers (Redis session store, AQI two-source reconciliation, teleconsultation slot booking) are maintained in a **separate, external system** and are not part of this repository — see `docs/KNOWN_LIMITATIONS.md`.
 
@@ -41,22 +41,22 @@ make seed-reports-calls ORG_ID=<org id> PROJECT_IDS="<project A id> <project B i
                           # with zero calls to exercise the empty-data path
 ```
 
-Then, through the gateway (`localhost:8000`):
+Then, through the gateway (`localhost:45451`):
 
 ```bash
 # Login as the bootstrap Admin
-curl -X POST http://localhost:8000/api/v1/auth/login \
+curl -X POST http://localhost:45451/api/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"admin@example.com","password":"<BOOTSTRAP_ADMIN_PASSWORD>"}'
 
 # Dashboard (Authorization: Bearer <access_token> from above)
-curl http://localhost:8000/api/v1/dashboard?project_id=<project A id> -H "Authorization: Bearer $TOKEN"
+curl http://localhost:45451/api/v1/dashboard?project_id=<project A id> -H "Authorization: Bearer $TOKEN"
 
 # CSV export (ADMIN/SUPERVISOR only — VIEWER gets 403)
-curl http://localhost:8000/api/v1/export.csv?project_id=<project A id> -H "Authorization: Bearer $TOKEN"
+curl http://localhost:45451/api/v1/export.csv?project_id=<project A id> -H "Authorization: Bearer $TOKEN"
 
 # Manually trigger the automailer for a project (delivered via ALERT_API_URL — see services/reports/.env.example)
-curl -X POST http://localhost:8000/api/v1/run -H "Authorization: Bearer $TOKEN" \
+curl -X POST http://localhost:45451/api/v1/run -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d '{"scope":"<project A id>","extra_recipients":["qa-test@example.com"]}'
 ```
 

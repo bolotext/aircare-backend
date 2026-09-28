@@ -14,7 +14,7 @@ def _serve(log_level: str, reload: bool = False, workers: int | None = None) -> 
     uvicorn.run(
         "app:app",
         host="0.0.0.0",
-        port=8003,
+        port=45453,
         log_level=log_level.lower(),
         reload=reload,
         workers=None if reload else workers,

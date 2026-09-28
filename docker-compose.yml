@@ -5,10 +5,9 @@ services:
       context: .
       dockerfile: services/users/Dockerfile
     container_name: aircare_users
+    network_mode: host
     env_file:
       - services/users/.env
-    networks:
-      - aircare-network
     restart: always
 
   api-gateway:
@@ -16,14 +15,13 @@ services:
       context: .
       dockerfile: services/api-gateway/Dockerfile
     container_name: aircare_api_gateway
-    ports:
-      - 45454:8000
+    network_mode: host
     env_file:
       - services/api-gateway/.env
     environment:
-      USERS_SERVICE_URL: http://users:8001
-      REPORTS_SERVICE_URL: http://reports:8002
-      MCP_CLIENTS_SERVICE_URL: http://mcp-clients:8003
+      USERS_SERVICE_URL: http://localhost:45452
+      REPORTS_SERVICE_URL: http://localhost:45454
+      MCP_CLIENTS_SERVICE_URL: http://localhost:45453
       # Worker process count (no --reload in this production entrypoint —
       # see services/api-gateway/entrypoint.sh). Defaults to 2 if unset;
       # override here per environment, e.g. WEB_CONCURRENCY: "4".
@@ -32,8 +30,6 @@ services:
       - users
       - reports
       - mcp-clients
-    networks:
-      - aircare-network
     restart: always
 
   mcp-clients:
@@ -41,12 +37,9 @@ services:
       context: .
       dockerfile: services/mcp_clients/Dockerfile
     container_name: aircare_mcp_clients
-    ports:
-      - 45455:8003
+    network_mode: host
     env_file:
       - services/mcp_clients/.env
-    networks:
-      - aircare-network
     restart: always
 
   reports:
@@ -54,20 +47,15 @@ services:
       context: .
       dockerfile: services/reports/Dockerfile
     container_name: aircare_reports
+    network_mode: host
     env_file:
       - services/reports/.env
     environment:
-      USERS_SERVICE_URL: http://users:8001
+      USERS_SERVICE_URL: http://localhost:45452
       # Worker process count (no --reload in this production entrypoint —
       # see services/reports/entrypoint.sh). Defaults to 2 if unset; override
       # here per environment, e.g. WEB_CONCURRENCY: "4".
       # WEB_CONCURRENCY: "2"
     depends_on:
       - users
-    networks:
-      - aircare-network
     restart: always
-
-networks:
-  aircare-network:
-    driver: bridge

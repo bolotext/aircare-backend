@@ -51,5 +51,5 @@ ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app/services/mcp_clients:/app/libs/common/src"
 
 WORKDIR /app/services/mcp_clients
-EXPOSE 8003
+EXPOSE 45453
 ENTRYPOINT ["./entrypoint.sh"]
