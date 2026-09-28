@@ -8,7 +8,8 @@ production bug where Demo Project A's configured collection
 raised `UnrecognizedReportSchemaError` for every request against it. Also
 verifies this source's health-condition/location fields
 (`condition`/`city`/`user_context`) never reach the API response, same as
-the other adapters' phone/name/recording PII.
+the other adapters' phone/name/recording PII — while `conversation_log`
+itself IS surfaced in `raw` (see schema_adapters.py's module docstring).
 """
 
 import pytest
@@ -87,6 +88,9 @@ async def test_list_calls_normalizes_call_logs_documents_and_omits_pii(app, clie
     assert item["disposition"] == "APPOINTMENT_INTERESTED"
     assert item["connected_seconds"] == 54.0
 
+    # The paginated list view never includes `raw` at all (see
+    # calls/schema.py::CallListItem) — conversation_log only ever surfaces
+    # via GET /calls/{conversation_id} (see the detail test below).
     payload_text = resp.text
     for pii in (
         "narendra.singh@gnani.ai",
@@ -101,7 +105,7 @@ async def test_list_calls_normalizes_call_logs_documents_and_omits_pii(app, clie
         assert pii not in payload_text
 
 
-async def test_call_detail_omits_pii_and_health_data_from_raw(app, client):
+async def test_call_detail_omits_pii_and_health_data_from_raw_but_keeps_conversation_log(app, client):
     collection = AsyncMongoMockClient()["aircare"]["call_logs"]
     await collection.insert_one(_raw_call_logs_doc())
 
@@ -111,9 +115,10 @@ async def test_call_detail_omits_pii_and_health_data_from_raw(app, client):
     resp = await client.get("/api/v1/calls/1790329075540158485", params={"project_id": str(PROJECT)})
     data = resp.json()["data"]
     assert data["organization_id"] == str(ORG)
-    for key in ("phone", "rec_path", "conversation_log", "condition", "city", "patient_id", "user_context"):
+    for key in ("phone", "rec_path", "condition", "city", "patient_id", "user_context"):
         assert key not in data["raw"]
     assert data["raw"]["hangup_cause_code"] == "16"
+    assert data["raw"]["conversation_log"] == [{"role": "user", "content": "confidential patient detail"}]
 
 
 async def test_dashboard_metrics_computed_in_python_for_call_logs(app, client):

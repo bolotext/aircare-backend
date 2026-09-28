@@ -19,11 +19,20 @@ from.
 
 PII the source schema carries — customer name, phone numbers
 (`phone`/`phone_number`/`customerPhone`/`srcPhone`/`dstPhone`), the call
-recording path (`rec_path`), and the raw conversation transcript
-(`conversation_log`) — is deliberately dropped here, never copied into
-`raw`: this service's API must not return it (flagged to the project owner
-as real-shaped customer/PII data sitting in a project literally named
-"demo").
+recording path (`rec_path`), and (for `normalize_call_logs`) the patient's
+health condition/location (`condition`/`city`/`user_context`) — is
+deliberately dropped here, never copied into `raw`: this service's API must
+not return it (flagged to the project owner as real-shaped customer/PII
+data sitting in a project literally named "demo").
+
+The raw conversation transcript (`conversation_log`) is the one exception:
+it IS copied into `raw` here, same as it already is for a native-Call-schema
+project (see calls/model.py's `raw` passthrough) — surfaced explicitly per
+project-owner sign-off (2026-09-28) that viewing it in the call-detail UI is
+covered by existing consent/DPA. It still carries whatever the caller said
+on the call (which can include health/identity details spoken aloud, as
+distinct from the structured fields above) — treat it with the same care as
+a call recording when handling it further downstream.
 
 Which normalizer (if any) applies to a given project is *detected*, not
 configured: `resolve_adapter` below samples one document from the project's
@@ -104,7 +113,8 @@ def normalize_report_llm(doc: dict, *, project_id: str, organization_id: str) ->
         "connected_seconds": _to_float(doc.get("gnanivb_billing_duration")),
         "tool_failure_count": 0,
         # No name/phone/phone_number/customerPhone/srcPhone/dstPhone/
-        # rec_path/conversation_log here — see module docstring.
+        # rec_path here — see module docstring. conversation_log is
+        # deliberately included (same docstring).
         "raw": {
             "call_sequence_mapping": doc.get("call_sequence_mapping"),
             "sequence_number": doc.get("sequence_number"),
@@ -116,6 +126,7 @@ def normalize_report_llm(doc: dict, *, project_id: str, organization_id: str) ->
             "hangup_cause_code": doc.get("gnanivb_hangup_cause_code"),
             "hangup_cause_text": doc.get("gnanivb_hangup_cause_text_tech"),
             "dial_status": doc.get("gnanivb_dial_status"),
+            "conversation_log": doc.get("conversation_log"),
         },
     }
 
@@ -131,9 +142,9 @@ def normalize_aircare_calls(doc: dict, *, project_id: str, organization_id: str)
     actually carries a usable `language` field.
 
     Same PII exclusion as normalize_report_llm above: no name/phone/
-    phone_number/customerPhone/srcPhone/dstPhone/rec_path/conversation_log/
-    user_id/disposition_result/post_call_extraction in the output, here or
-    in `raw`.
+    phone_number/customerPhone/srcPhone/dstPhone/rec_path/user_id/
+    disposition_result/post_call_extraction in the output, here or in `raw`.
+    `conversation_log` is included in `raw` — see module docstring.
     """
 
     def _aware(value: object) -> datetime | None:
@@ -178,6 +189,7 @@ def normalize_aircare_calls(doc: dict, *, project_id: str, organization_id: str)
             "hangup_cause_code": doc.get("gnanivb_hangup_cause_code"),
             "hangup_cause_text": doc.get("gnanivb_hangup_cause_text_tech"),
             "dial_status": doc.get("gnanivb_dial_status"),
+            "conversation_log": doc.get("conversation_log"),
         },
     }
 
@@ -197,8 +209,12 @@ def normalize_call_logs(doc: dict, *, project_id: str, organization_id: str) -> 
     (`user_context.condition`/`city`, top-level `condition`/`city`) —
     neither is copied into the output or `raw` either, same as
     name/phone/phone_number/customerPhone/srcPhone/dstPhone/rec_path/
-    conversation_log/patient_id/user_id/disposition_result/
-    post_call_extraction/user_context/call_infra.
+    patient_id/user_id/disposition_result/post_call_extraction/
+    user_context/call_infra. `conversation_log` is included in `raw` — see
+    module docstring — but note it can itself carry health/identity details
+    the caller spoke aloud (e.g. a verification date of birth), even though
+    the structured `condition`/`city`/`patient_id` fields above stay
+    stripped.
     """
 
     call_start = _parse_wrapped_isodate(doc.get("callStartTime"))
@@ -232,6 +248,7 @@ def normalize_call_logs(doc: dict, *, project_id: str, organization_id: str) -> 
             "hangup_cause_code": doc.get("gnanivb_hangup_cause_code"),
             "hangup_cause_text": doc.get("gnanivb_hangup_cause_text_tech"),
             "dial_status": doc.get("gnanivb_dial_status"),
+            "conversation_log": doc.get("conversation_log"),
         },
     }
 

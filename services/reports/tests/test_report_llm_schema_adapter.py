@@ -3,8 +3,10 @@ through the /calls, /calls/{id}, and /dashboard routes — the actual point
 being (1) a project whose configured collection is real call-center CDR
 data, not this service's own Call schema, still gets filtered/paginated/
 aggregated correctly, and (2) the PII that source schema carries (name,
-phone numbers, recording path, raw transcript) never reaches the API
-response.
+phone numbers, recording path) never reaches the API response.
+`conversation_log` is the one exception (see schema_adapters.py's module
+docstring): it's deliberately surfaced in `raw` for the call-detail
+transcript view.
 """
 
 import pytest
@@ -78,12 +80,15 @@ async def test_list_calls_normalizes_report_llm_documents_and_omits_pii(app, cli
     assert item["call_status"] == "ANSWERED"
     assert item["connected_seconds"] == 28.0
 
+    # The paginated list view never includes `raw` at all (see
+    # calls/schema.py::CallListItem) — conversation_log only ever surfaces
+    # via GET /calls/{conversation_id} (see the detail test below).
     payload_text = resp.text
     for pii in ("manoj", "8553079962", "917313119575", "rec_path", "confidential policy detail"):
         assert pii not in payload_text
 
 
-async def test_call_detail_omits_pii_from_raw(app, client):
+async def test_call_detail_omits_pii_from_raw_but_keeps_conversation_log(app, client):
     collection = AsyncMongoMockClient()["demo_collection"]["report_llm"]
     await collection.insert_one(_raw_report_llm_doc())
 
@@ -96,8 +101,10 @@ async def test_call_detail_omits_pii_from_raw(app, client):
     assert "name" not in data["raw"]
     assert "phone" not in data["raw"]
     assert "rec_path" not in data["raw"]
-    assert "conversation_log" not in data["raw"]
     assert data["raw"]["hangup_cause_code"] == "16"
+    assert data["raw"]["conversation_log"] == [
+        {"asr_text": "hello", "bot_response": "some confidential policy detail"}
+    ]
 
 
 async def test_dashboard_metrics_computed_in_python_for_report_llm(app, client):
