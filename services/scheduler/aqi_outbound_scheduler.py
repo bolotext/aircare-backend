@@ -498,6 +498,7 @@ async def initiate_outbound_advisory_call(patient: dict, reconciled_value: float
                 "patient_id": patient_id,
                 "patient_name": patient_name,
                 "project_id": patient.get("project_id"),
+                "patient": patient,
                 "phone_number": phone_number,
                 "city": patient.get("city"),
                 "condition": patient.get("condition"),
