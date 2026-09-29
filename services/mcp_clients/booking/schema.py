@@ -4,6 +4,7 @@ slot-booking API exposed by booking/router.py:
     POST /verify_identity
     GET  /next_slot
     POST /reserve_slot
+    POST /cancel_appointment
 
 These mirror the request/response contract documented in router.py's
 "Response contract" comment block above verify_identity, and are wired in as
@@ -76,6 +77,18 @@ class ReserveSlotResponse(BaseModel):
     slot_id: Optional[str] = None
     date_time: Optional[str] = None
     doctor_name: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# POST /cancel_appointment
+# ---------------------------------------------------------------------------
+
+class CancelAppointmentRequest(BaseModel):
+    patient_id: str = Field(..., min_length=1)
+
+
+class CancelAppointmentResponse(BaseModel):
+    result: Literal["cancelled", "not_found"]
 
 
 # ---------------------------------------------------------------------------

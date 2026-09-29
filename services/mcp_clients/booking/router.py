@@ -9,7 +9,7 @@ from dateutil import parser as dateutil_parser
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
-from mongo_mcp_client import MongoMCPError, mcp_find, mcp_insert
+from mongo_mcp_client import MongoMCPError, mcp_find, mcp_insert, mcp_update
 from redis_mcp_client import (
     RedisMCPError,
     redis_lpop,
@@ -19,6 +19,8 @@ from redis_mcp_client import (
 
 from .schema import (
     BookingErrorResponse,
+    CancelAppointmentRequest,
+    CancelAppointmentResponse,
     NextSlotRequest,
     NextSlotResponse,
     ReserveSlotRequest,
@@ -309,6 +311,7 @@ def _persist_booking_event(patient_id, result):
             {
                 "event": "teleconsultation_booking",
                 "patient_id": patient_id,
+                "status": "reserved" if result.get("result") in ("reserved", "reoffered") else result.get("result"),
                 "result": result.get("result"), "slot_id": result.get("slot_id"),
                 "date_time": result.get("date_time"), "doctor_name": result.get("doctor_name"),
                 "created_at": _iso_now(),
@@ -316,3 +319,22 @@ def _persist_booking_event(patient_id, result):
         )
     except MongoMCPError:
         logger.exception("reserve_slot: failed to persist booking audit doc")
+
+
+@router.post("/cancel_appointment", response_model=CancelAppointmentResponse, responses={502: {"model": BookingErrorResponse}})
+async def cancel_appointment(body: CancelAppointmentRequest):
+    """Flip the patient's teleconsultation_booking call_events docs from
+    status "reserved" to "cancelled by user". Does not return the slot to
+    slots:available — rpush would append it out of order behind later slots."""
+    patient_id = body.patient_id
+    logger.warning(f"cancel_appointment request: patient_id={patient_id}")
+    try:
+        cancelled = mcp_update(
+            "call_events",
+            {"event": "teleconsultation_booking", "patient_id": patient_id, "status": "reserved"},
+            {"status": "cancelled by user", "cancelled_at": _iso_now()},
+        )
+    except MongoMCPError as e:
+        logger.exception("cancel_appointment: Mongo MCP failure")
+        return _im_error(502, "mongo_mcp_failure", str(e))
+    return {"result": "cancelled" if cancelled else "not_found"}
