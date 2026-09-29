@@ -67,6 +67,7 @@ class NextSlotResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ReserveSlotRequest(BaseModel):
+    patient_id: str = Field(..., min_length=1, description="Patient the slot is being reserved for; stored on the booking audit record.")
     candidate_slot_id: str = Field(..., min_length=1, description="slot_id previously returned by /next_slot that the agent proposed to the caller.")
 
 

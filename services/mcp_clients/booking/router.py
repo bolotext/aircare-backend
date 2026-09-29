@@ -41,14 +41,13 @@ router = APIRouter(prefix="/mcp", tags=["booking"])
 #
 # Two tools the voice agent calls mid-call:
 #   verify_identity(call_id, patient_id, spoken_dob) -> {"verified", "reason"}
-#   reserve_slot(candidate_slot_id) -> {"result", "slot_id", ...}
+#   reserve_slot(patient_id, candidate_slot_id) -> {"result", "slot_id", ...}
 # plus GET /mcp/next_slot(date), a non-destructive peek the agent uses to
 # learn every slot_id available on a given date so it can offer the patient
 # a choice before calling reserve_slot with whichever slot_id was picked.
-# Neither next_slot nor reserve_slot takes a call_id/patient_id — next_slot
-# has no state to scope by them, and reserve_slot's lack of them means it's
-# not idempotent and its audit record can't be linked back to a specific
-# call or patient (see its docstring and the Response contract note below).
+# next_slot takes no patient_id (no state to scope by it); reserve_slot takes
+# patient_id, which is stored on its call_events audit record. It still takes
+# no call_id, so it isn't idempotent (see the Response contract note below).
 #
 # Both tools talk to Mongo only through mcp_find/mcp_insert and to Redis only
 # through redis_rpush/redis_lpop/redis_lrange
@@ -83,10 +82,11 @@ router = APIRouter(prefix="/mcp", tags=["booking"])
 #   slot_id /next_slot just returned, not only the first — "reserved" means
 #   that exact slot was claimed; "reoffered" means it couldn't be found
 #   (already taken, or stale) and a different real slot was claimed instead.
+#   Request body: {"patient_id", "candidate_slot_id"}; patient_id is persisted
+#   on the call_events audit doc.
 #   NOT idempotent: takes no call_id, so a replay (e.g. a retried request)
 #   claims a second, different slot rather than returning the first
-#   reservation, and its call_events audit doc can't be linked back to a
-#   specific call or patient.
+#   reservation.
 # 422 FastAPI's standard validation-error body on missing/invalid required
 #   fields, on either endpoint (bodies/query params are typed Pydantic models
 #   from schema.py — see VerifyIdentityRequest, NextSlotRequest,
@@ -274,8 +274,8 @@ def _claim_slot(candidate_slot_id):
 
 @router.post("/reserve_slot", response_model=ReserveSlotResponse, responses={502: {"model": BookingErrorResponse}})
 async def reserve_slot(body: ReserveSlotRequest):
-    candidate_slot_id = body.candidate_slot_id
-    logger.warning(f"reserve_slot request: candidate_slot_id={candidate_slot_id}")
+    patient_id, candidate_slot_id = body.patient_id, body.candidate_slot_id
+    logger.warning(f"reserve_slot request: patient_id={patient_id} candidate_slot_id={candidate_slot_id}")
 
     try:
         _ensure_slots_seeded()
@@ -294,13 +294,13 @@ async def reserve_slot(body: ReserveSlotRequest):
         result = {"result": "reoffered", "slot_id": reoffered["slot_id"], "date_time": reoffered["date_time"], "doctor_name": reoffered["doctor_name"]}
     else:
         result = {"result": "no_slot", "slot_id": None, "date_time": None, "doctor_name": None}
-    _persist_booking_event(result)
+    _persist_booking_event(patient_id, result)
     return result
 
 
-def _persist_booking_event(result):
-    """Best-effort audit record — no call_id/patient_id to key or dedupe on
-    (see reserve_slot's docstring note in the module header), so a retried
+def _persist_booking_event(patient_id, result):
+    """Best-effort audit record — keyed by patient_id but with no call_id to
+    dedupe on (see reserve_slot's docstring note in the module header), so a retried
     insert after an ambiguous timeout may write a duplicate doc rather than
     being deduped."""
     try:
@@ -308,6 +308,7 @@ def _persist_booking_event(result):
             "call_events",
             {
                 "event": "teleconsultation_booking",
+                "patient_id": patient_id,
                 "result": result.get("result"), "slot_id": result.get("slot_id"),
                 "date_time": result.get("date_time"), "doctor_name": result.get("doctor_name"),
                 "created_at": _iso_now(),
