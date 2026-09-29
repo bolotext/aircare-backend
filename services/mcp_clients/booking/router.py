@@ -332,7 +332,7 @@ async def cancel_appointment(body: CancelAppointmentRequest):
         cancelled = mcp_update(
             "call_events",
             {"event": "teleconsultation_booking", "patient_id": patient_id, "result": "reserved"},
-            {"status": "cancelled by user", "cancelled_at": _iso_now()},
+            {"result": "cancelled by user", "cancelled_at": _iso_now()},
         )
     except MongoMCPError as e:
         logger.exception("cancel_appointment: Mongo MCP failure")
