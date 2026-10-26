@@ -155,3 +155,24 @@ async def test_date_filter_applies_to_report_llm_calendar_date(app, client):
     body = resp.json()["data"]
     assert body["total"] == 1
     assert body["items"][0]["conversation_id"] == "in-range"
+
+
+async def test_scenario_edit_is_written_to_the_raw_report_document(app, client):
+    collection = AsyncMongoMockClient()["demo_collection"]["report_llm"]
+    await collection.insert_one(_raw_report_llm_doc())
+    _override_report_llm_source(app, collection)
+    app.dependency_overrides[get_current_identity] = lambda: make_identity("ADMIN")
+    params = {"project_id": str(PROJECT)}
+
+    saved = await client.put("/api/v1/calls/1739438565473667214/scenario", params=params, json={"scenario": "Valid PTP date"})
+    assert saved.json()["code"] == 200
+
+    raw = await collection.find_one({"_id": "raw-1"})
+    assert raw["scenarios"] == "Valid PTP date"
+    assert raw["scenarios_updated_by"] == "000000000000000000000001"
+    # the raw document's own fields are untouched
+    assert raw["flow_id"] == "balic-llm-en" and raw["customerPhone"] == "8553079962"
+
+    listed = await client.get("/api/v1/calls", params=params)
+    assert listed.json()["data"]["items"][0]["scenario"] == "Valid PTP date"
+    assert "8553079962" not in listed.text

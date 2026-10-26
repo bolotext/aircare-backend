@@ -7,6 +7,7 @@ from common.errors import NotFoundError
 from common.openapi import FORBIDDEN_EXAMPLE, UNAUTHORIZED_EXAMPLE
 from reports_service.calls import repository as call_repo
 from reports_service.calls.repository import CallFilter, day_range_bounds
+from reports_service.calls.router import scenario_from_report
 from reports_service.core.deps import ProjectCallSource, ensure_project_access, require_permission, resolve_project_source
 from reports_service.core.users_client import IdentityContext
 from reports_service.export.uat_report import MAX_CALLS, build_uat_xlsx
@@ -102,6 +103,11 @@ async def export_csv(
 
 
 class UatReportRequest(BaseModel):
+    scenarios: dict[str, str] = Field(
+        default_factory=dict,
+        max_length=MAX_CALLS,
+        description="Optional tester-entered Scenarios text per conversation_id (max 500 characters each).",
+    )
     conversation_ids: list[str] = Field(
         min_length=1, max_length=MAX_CALLS, description=f"The selected calls, one template row each (max {MAX_CALLS})."
     )
@@ -141,8 +147,10 @@ async def export_uat_xlsx(
     )
     if not calls:
         raise NotFoundError("None of the selected calls were found")
+    # Scenarios live on the report documents themselves.
+    stored = {c.conversation_id: s for c in calls if (s := scenario_from_report(c))}
     return Response(
-        content=build_uat_xlsx(calls),
+        content=build_uat_xlsx(calls, {**stored, **{k: v[:500] for k, v in body.scenarios.items()}}),
         media_type=_XLSX,
         headers={"Content-Disposition": "attachment; filename=Unit_Test_Report.xlsx"},
     )

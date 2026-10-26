@@ -46,6 +46,7 @@ class CallListItem(BaseModel):
     call_end_time: datetime | None = Field(description="UTC timestamp the call ended, or `null` if it's still open/was never connected.")
     connected_seconds: float | None = Field(description="Talk time in seconds while connected, or `null` when not applicable (e.g. unanswered).")
     tool_failure_count: int = Field(description="Number of tool/function-call invocations during this call that failed.")
+    scenario: str | None = Field(default=None, description="Tester-entered Scenarios text for this call; populated on `GET /calls`.")
     fields: dict[str, Any] = Field(default_factory=dict, description="Values of the project's Field Mapper columns; populated on `GET /calls` only.")
 
 

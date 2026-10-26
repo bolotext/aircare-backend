@@ -162,6 +162,27 @@ async def update_project(
     return success_response(message="Project updated", data=_to_out(project))
 
 
+@router.delete(
+    "/{project_id}",
+    response_model=SuccessResponse[None],
+    summary="Delete a project",
+    description="""Permanently deletes a project and all user assignments to it. **Not reversible.**
+
+The Mongo database/collections the project read from are NOT touched, and data other services keyed by
+this project id (automailer recipients/runs, patients) is left in place but becomes unreachable. Prefer
+archiving (`PATCH` with `status: "archived"`) if the project may be needed again.
+
+**Errors:** 403 if the caller lacks `project.create` (Admin-only); 404 if `project_id` doesn't exist.""",
+    responses=success_and_error_responses("Project deleted", None, UNAUTHORIZED_EXAMPLE, FORBIDDEN_EXAMPLE, not_found_example("Project")),
+)
+async def delete_project(
+    project_id: PydanticObjectId = Path(..., description="The project to delete.", examples=["6aae5deae9a48c4dc62aa398"]),
+    auth: AuthContext = Depends(require_permission("project.create")),
+) -> dict:
+    await project_service.delete_project(project_id)
+    return success_response(message="Project deleted", data=None)
+
+
 @router.post(
     "/{project_id}/assignments",
     response_model=SuccessResponse[AssignmentOut],

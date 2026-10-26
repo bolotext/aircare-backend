@@ -231,7 +231,7 @@ async def get_many_by_conversation_ids(
         found = {c.conversation_id: c for c in calls if c.conversation_id in wanted}
     else:
         cursor = collection.find({"conversation_id": {"$in": list(wanted)}, "project_id": PydanticObjectId(project_id)})
-        found = {doc["conversation_id"]: Call.model_validate(doc) async for doc in cursor}
+        found = {doc["conversation_id"]: _with_source(Call.model_validate(doc), doc) async for doc in cursor}
     return [found[cid] for cid in conversation_ids if cid in found]
 
 

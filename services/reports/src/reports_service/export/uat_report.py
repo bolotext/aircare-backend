@@ -7,7 +7,8 @@ columns the template owner asked to be call-derived are written:
 - Stage Name <- call.disposition
 - Sender ID  <- call.conversation_id
 
-Everything else (Scenarios, Call Path, the Pass/Fail ratings, comments) is
+Scenarios is the one tester-entered column: it is filled from the optional
+`scenarios` map (conversation_id -> text). Everything else (Call Path, the Pass/Fail ratings, comments) is
 left as the template has it so testers rate each call themselves — except the
 template's grey example row text and any unused rows, which are cleared so
 they can't inflate the sheet's summary counts. Overall Call Score and the
@@ -32,7 +33,18 @@ _COL_SL_NO, _COL_LANGUAGE, _COL_STAGE, _COL_SCENARIO, _COL_SENDER, _COL_COMMENTS
 _CLEARABLE = "ABCDEFGHIKLMNOPQRST"
 
 
-def build_uat_xlsx(calls: list[Call]) -> bytes:
+def _set_text(cell, value: str | None) -> None:
+    """Writes `value` as plain text. openpyxl would otherwise store a string
+    starting with `=` as a formula, which would let a typed scenario or a
+    stored id run as a spreadsheet formula."""
+
+    cell.value = value
+    if isinstance(value, str):
+        cell.data_type = "s"
+
+
+def build_uat_xlsx(calls: list[Call], scenarios: dict[str, str] | None = None) -> bytes:
+    scenarios = scenarios or {}
     if len(calls) > MAX_CALLS:
         raise ValueError(f"At most {MAX_CALLS} calls fit in one report")
 
@@ -42,13 +54,14 @@ def build_uat_xlsx(calls: list[Call]) -> bytes:
     for offset, call in enumerate(calls):
         row = FIRST_DATA_ROW + offset
         sheet[f"{_COL_SL_NO}{row}"] = offset + 1
-        sheet[f"{_COL_LANGUAGE}{row}"] = call.language
-        sheet[f"{_COL_STAGE}{row}"] = call.disposition
-        sheet[f"{_COL_SENDER}{row}"] = call.conversation_id
+        _set_text(sheet[f"{_COL_LANGUAGE}{row}"], call.language)
+        _set_text(sheet[f"{_COL_STAGE}{row}"], call.disposition)
+        _set_text(sheet[f"{_COL_SENDER}{row}"], call.conversation_id)
+        scenario = (scenarios.get(call.conversation_id) or "").strip()
+        _set_text(sheet[f"{_COL_SCENARIO}{row}"], scenario or None)
 
     # The template's example row carries sample free text; don't ship it.
     if calls:
-        sheet[f"{_COL_SCENARIO}{FIRST_DATA_ROW}"] = None
         sheet[f"{_COL_COMMENTS}{FIRST_DATA_ROW}"] = None
 
     for row in range(FIRST_DATA_ROW + len(calls), LAST_DATA_ROW + 1):

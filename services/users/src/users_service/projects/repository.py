@@ -79,6 +79,15 @@ async def update_project(
     return project
 
 
+async def delete_project(project: Project) -> None:
+    await project.delete()
+
+
+async def delete_assignments_for_project(project_id: PydanticObjectId) -> int:
+    result = await UserProjectAssignment.find(UserProjectAssignment.project_id == project_id).delete()
+    return result.deleted_count if result is not None else 0
+
+
 async def create_assignment(
     user_id: PydanticObjectId,
     project_id: PydanticObjectId,

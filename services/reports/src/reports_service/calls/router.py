@@ -1,10 +1,11 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
-from common.errors import NotFoundError
+from common.errors import BadGatewayError, NotFoundError
 from common.openapi import FORBIDDEN_EXAMPLE, UNAUTHORIZED_EXAMPLE, not_found_example, success_and_error_responses
 from common.responses import success_response
 from common.schemas import SuccessResponse
-from fastapi import APIRouter, Depends, Path, Query, Response
+from fastapi import APIRouter, Body, Depends, Path, Query, Response
+from pydantic import BaseModel, Field
 
 from reports_service.calls import repository as call_repo
 from reports_service.calls.model import Call
@@ -25,6 +26,14 @@ _LIST_EXAMPLE = {
     "total": 137,
 }
 _DETAIL_EXAMPLE = CallDetail.model_config["json_schema_extra"]["example"]
+
+
+def scenario_from_report(call: Call) -> str | None:
+    """The scenario stored on the call's own report document — the only place
+    scenarios are kept."""
+
+    value = (call._source_doc or {}).get("scenarios")
+    return value if isinstance(value, str) and value else None
 
 
 def _to_list_item(call: Call, field_mapping: dict[str, str] | None = None) -> CallListItem:
@@ -127,7 +136,10 @@ async def list_calls(
     return success_response(
         data=PaginatedCalls(
             columns=mapped_columns(source.field_mapping),
-            items=[_to_list_item(c, source.field_mapping) for c in items],
+            items=[
+                _to_list_item(c, source.field_mapping).model_copy(update={"scenario": scenario_from_report(c)})
+                for c in items
+            ],
             page=page,
             page_size=effective_page_size,
             total=total,
@@ -175,6 +187,106 @@ async def get_call(
         raise NotFoundError("Call not found")
     ref = await resolve_recording_ref(source.collection, source.adapter, project_id, source.organization_id, conversation_id)
     return success_response(data=_to_detail(call, recording_available=ref is not None))
+
+
+async def _write_scenario_to_report(collection, call: Call, text: str, user_id: str) -> None:
+    """Stores the edit on the call's own document in the project's report
+    collection (`scenarios`, plus who/when), so the report itself carries it.
+    If the report can't be written the request fails."""
+
+    doc_id = (call._source_doc or {}).get("_id")
+    if doc_id is None:
+        raise NotFoundError("Call not found")
+    if text:
+        update = {
+            "$set": {
+                "scenarios": text,
+                "scenarios_updated_by": user_id,
+                "scenarios_updated_at": datetime.now(timezone.utc),
+            }
+        }
+    else:
+        update = {"$unset": {"scenarios": "", "scenarios_updated_by": "", "scenarios_updated_at": ""}}
+    try:
+        await collection.update_one({"_id": doc_id}, update)
+    except Exception as exc:
+        raise BadGatewayError("Unable to save to the report collection") from exc
+
+
+class CallLookupBody(BaseModel):
+    conversation_ids: list[str] = Field(min_length=1, max_length=50, description="Conversation ids to fetch, in order.")
+
+
+@router.post(
+    "/lookup",
+    response_model=SuccessResponse[list[CallListItem]],
+    summary="Fetch specific calls by conversation id",
+    description="""Returns the current list-view record (including `scenario`) for each requested
+conversation id in a project, in the order requested; ids that don't exist are skipped.
+
+**When to use:** showing the latest data for calls a user has selected across several pages.
+
+**Errors:** 403 without `report.view`/project access.""",
+    responses=success_and_error_responses("The calls", [], UNAUTHORIZED_EXAMPLE, FORBIDDEN_EXAMPLE),
+)
+async def lookup_calls(
+    project_id: str = Query(..., description="The project (Mongo ObjectId) the calls belong to."),
+    body: CallLookupBody = Body(...),
+    identity: IdentityContext = Depends(require_permission("report.view")),
+    source: ProjectCallSource = Depends(resolve_project_source),
+) -> dict:
+    ensure_project_access(identity, project_id)
+    calls = await call_repo.get_many_by_conversation_ids(
+        list(dict.fromkeys(body.conversation_ids)),
+        project_id,
+        collection=source.collection,
+        adapter=source.adapter,
+        organization_id=source.organization_id,
+    )
+    return success_response(
+        data=[
+            _to_list_item(c, source.field_mapping).model_copy(update={"scenario": scenario_from_report(c)})
+            for c in calls
+        ]
+    )
+
+
+class ScenarioBody(BaseModel):
+    scenario: str = Field(max_length=500, description="The scenario text; an empty string clears it.")
+
+
+@router.put(
+    "/{conversation_id}/scenario",
+    response_model=SuccessResponse[ScenarioBody],
+    summary="Set the Scenarios text for a call",
+    description="""Saves (or clears, with an empty string) the tester-entered Scenarios text for one call. Stored
+on the call's document in the project's report collection (`scenarios`, `scenarios_updated_by`,
+`scenarios_updated_at`).
+
+**Errors:** 403 without `report.annotate` or project access; 404 if the call isn't in the project; 422 if the
+text is over 500 characters.""",
+    responses=success_and_error_responses("Saved", {"scenario": "Valid PTP date"}, UNAUTHORIZED_EXAMPLE, FORBIDDEN_EXAMPLE, not_found_example("Call")),
+)
+async def set_call_scenario(
+    conversation_id: str = Path(..., description="The call's conversation identifier."),
+    project_id: str = Query(..., description="The project (Mongo ObjectId) this call belongs to."),
+    body: ScenarioBody = Body(...),
+    identity: IdentityContext = Depends(require_permission("report.annotate")),
+    source: ProjectCallSource = Depends(resolve_project_source),
+) -> dict:
+    ensure_project_access(identity, project_id)
+    call = await call_repo.get_by_conversation_id(
+        conversation_id,
+        project_id,
+        collection=source.collection,
+        adapter=source.adapter,
+        organization_id=source.organization_id,
+    )
+    if call is None:
+        raise NotFoundError("Call not found")
+    text = body.scenario.strip()
+    await _write_scenario_to_report(source.collection, call, text, identity.user_id)
+    return success_response(message="Scenario saved", data=ScenarioBody(scenario=text))
 
 
 @router.get(

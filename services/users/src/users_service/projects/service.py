@@ -3,7 +3,7 @@ from common.enums import Role
 from common.errors import BadRequestError, ConflictError, ForbiddenError, NotFoundError
 
 from users_service.core.deps import AuthContext
-from users_service.enums import ProjectStatus
+from users_service.enums import OrganizationStatus, ProjectStatus
 from users_service.organizations import repository as organization_repo
 from users_service.projects import repository as project_repo
 from users_service.projects.model import Project, UserProjectAssignment
@@ -19,8 +19,11 @@ async def create_project(
     report_collection_name: str,
     customer_details_collection_name: str | None = None,
 ) -> Project:
-    if await organization_repo.get_by_id(organization_id) is None:
+    organization = await organization_repo.get_by_id(organization_id)
+    if organization is None:
         raise NotFoundError("Organization not found")
+    if organization.status == OrganizationStatus.SUSPENDED:
+        raise ConflictError("Projects can't be created in a suspended organization", {"field": "organization_id"})
     if await project_repo.get_by_org_and_code(organization_id, code) is not None:
         raise ConflictError("A project with this code already exists in this organization", {"field": "code"})
     return await project_repo.create_project(
@@ -92,6 +95,19 @@ async def update_project(
         customer_details_collection_name=customer_details_collection_name,
         customer_details_fields=customer_details_fields,
     )
+
+
+async def delete_project(project_id: PydanticObjectId) -> None:
+    """Hard-deletes the project and every user assignment to it. The Mongo
+    collections it pointed at, and records other services keyed by this
+    project id (recipients, runs, patients), are left untouched; they become
+    unreachable because the project no longer resolves."""
+
+    project = await project_repo.get_by_id(project_id)
+    if project is None:
+        raise NotFoundError("Project not found")
+    await project_repo.delete_assignments_for_project(project_id)
+    await project_repo.delete_project(project)
 
 
 async def assign_user(

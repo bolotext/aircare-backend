@@ -278,3 +278,38 @@ async def test_customer_field_options_validation(client):
     )
     assert code(resp) == 200
     assert data(resp)["customer_details_fields"][0]["options"] == ["Hindi", "English"]
+
+
+async def test_admin_deletes_project_and_its_assignments(client):
+    org = await make_org("Org DEL", "org-del")
+    admin = await make_user(None, Role.ADMIN, "admin-del@example.com")
+    supervisor = await make_user(org.id, Role.SUPERVISOR, "sup-del@example.com")
+    project = await make_project(org.id, "DEL", "del")
+    await make_assignment(supervisor.id, project.id, org.id)
+
+    forbidden = await client.delete(f"/api/v1/projects/{project.id}", headers=auth_header(supervisor))
+    assert code(forbidden) == 403
+
+    resp = await client.delete(f"/api/v1/projects/{project.id}", headers=auth_header(admin))
+    assert code(resp) == 200
+
+    assert code(await client.get(f"/api/v1/projects/{project.id}", headers=auth_header(admin))) == 404
+    assert code(await client.delete(f"/api/v1/projects/{project.id}", headers=auth_header(admin))) == 404
+    listed = await client.get("/api/v1/projects", headers=auth_header(supervisor))
+    assert data(listed) == []
+
+
+async def test_cannot_create_project_in_suspended_organization(client):
+    from users_service.enums import OrganizationStatus
+
+    org = await make_org("Org SUS", "org-sus")
+    org.status = OrganizationStatus.SUSPENDED
+    await org.save()
+    admin = await make_user(None, Role.ADMIN, "admin-sus@example.com")
+
+    resp = await client.post(
+        "/api/v1/projects",
+        headers=auth_header(admin),
+        json={"organization_id": str(org.id), "name": "X", "code": "x", "report_db_name": "aircare", "report_collection_name": "calls"},
+    )
+    assert code(resp) == 409
