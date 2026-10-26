@@ -21,7 +21,6 @@ services:
     environment:
       USERS_SERVICE_URL: http://localhost:45452
       REPORTS_SERVICE_URL: http://localhost:45454
-      MCP_CLIENTS_SERVICE_URL: http://localhost:45453
       # Worker process count (no --reload in this production entrypoint —
       # see services/api-gateway/entrypoint.sh). Defaults to 2 if unset;
       # override here per environment, e.g. WEB_CONCURRENCY: "4".
@@ -29,7 +28,6 @@ services:
     depends_on:
       - users
       - reports
-      - mcp-clients
     restart: always
 
   # mcp-clients:
