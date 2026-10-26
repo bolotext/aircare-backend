@@ -32,15 +32,15 @@ services:
       - mcp-clients
     restart: always
 
-  mcp-clients:
-    build:
-      context: .
-      dockerfile: services/mcp_clients/Dockerfile
-    container_name: aircare_mcp_clients
-    network_mode: host
-    env_file:
-      - services/mcp_clients/.env
-    restart: always
+  # mcp-clients:
+  #   build:
+  #     context: .
+  #     dockerfile: services/mcp_clients/Dockerfile
+  #   container_name: aircare_mcp_clients
+  #   network_mode: host
+  #   env_file:
+  #     - services/mcp_clients/.env
+  #   restart: always
 
   reports:
     build:
