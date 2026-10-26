@@ -39,15 +39,15 @@ seed-scheduler-demo:
 # --- Development (auto-reload on source changes; single process — never use these in production) ---
 
 run-users:
-	@echo 'Running the Users service locally on :8001 with --reload (dev only; expects a reachable MongoDB, see services/users/.env)'
+	@echo 'Running the Users service locally on :45462 with --reload (dev only; expects a reachable MongoDB, see services/users/.env)'
 	cd services/users && uv run python main.py serve --reload
 
 run-gateway:
-	@echo 'Running the API Gateway locally on :8000 with --reload (dev only; expects the Users service reachable, see services/api-gateway/.env)'
+	@echo 'Running the API Gateway locally on :45461 with --reload (dev only; expects the Users service reachable, see services/api-gateway/.env)'
 	cd services/api-gateway && uv run python main.py --reload
 
 run-reports:
-	@echo 'Running the Reports service locally on :8002 with --reload (dev only; expects a reachable MongoDB and the Users service, see services/reports/.env)'
+	@echo 'Running the Reports service locally on :45464 with --reload (dev only; expects a reachable MongoDB and the Users service, see services/reports/.env)'
 	cd services/reports && uv run python main.py serve --reload
 
 run-all:
@@ -64,7 +64,7 @@ else
 endif
 
 run-mcp-clients:
-	@echo 'Running the MCP Clients service locally on :8003 with --reload (dev only; expects a reachable Mongo MCP server and Redis MCP server, see services/mcp_clients/.env)'
+	@echo 'Running the MCP Clients service locally on :45463 with --reload (dev only; expects a reachable Mongo MCP server and Redis MCP server, see services/mcp_clients/.env)'
 	cd services/mcp_clients && uv run python main.py serve --reload
 
 run-reports-scheduler:
@@ -79,19 +79,19 @@ run-scheduler:
 # services/*/entrypoint.sh already runs — see WEB_CONCURRENCY there) ---
 
 run-users-prod:
-	@echo 'Running the Users service on :8001 with 2 worker processes, no reload (production-style)'
+	@echo 'Running the Users service on :45462 with 2 worker processes, no reload (production-style)'
 	cd services/users && uv run python main.py serve --workers 2
 
 run-gateway-prod:
-	@echo 'Running the API Gateway on :8000 with 2 worker processes, no reload (production-style)'
+	@echo 'Running the API Gateway on :45461 with 2 worker processes, no reload (production-style)'
 	cd services/api-gateway && uv run python main.py --workers 2
 
 run-reports-prod:
-	@echo 'Running the Reports service on :8002 with 2 worker processes, no reload (production-style)'
+	@echo 'Running the Reports service on :45464 with 2 worker processes, no reload (production-style)'
 	cd services/reports && uv run python main.py serve --workers 2
 
 run-mcp-clients-prod:
-	@echo 'Running the MCP Clients service on :8003 with 2 worker processes, no reload (production-style)'
+	@echo 'Running the MCP Clients service on :45463 with 2 worker processes, no reload (production-style)'
 	cd services/mcp_clients && uv run python main.py serve --workers 2
 
 docker-build:

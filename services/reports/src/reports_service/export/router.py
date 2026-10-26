@@ -1,12 +1,15 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Body, Depends, Query, Response
+from pydantic import BaseModel, Field
 
+from common.errors import NotFoundError
 from common.openapi import FORBIDDEN_EXAMPLE, UNAUTHORIZED_EXAMPLE
 from reports_service.calls import repository as call_repo
 from reports_service.calls.repository import CallFilter, day_range_bounds
 from reports_service.core.deps import ProjectCallSource, ensure_project_access, require_permission, resolve_project_source
 from reports_service.core.users_client import IdentityContext
+from reports_service.export.uat_report import MAX_CALLS, build_uat_xlsx
 from reports_service.metrics.csv_export import build_csv
 from reports_service.metrics.service import compute_metrics
 
@@ -95,4 +98,51 @@ async def export_csv(
         content=csv_bytes,
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=call_report.csv"},
+    )
+
+
+class UatReportRequest(BaseModel):
+    conversation_ids: list[str] = Field(
+        min_length=1, max_length=MAX_CALLS, description=f"The selected calls, one template row each (max {MAX_CALLS})."
+    )
+
+
+_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@router.post(
+    "/export.xlsx",
+    summary="Fill the Unit Test Report (UAT) template from selected calls",
+    description=f"""Returns the UAT workbook template with one row per selected call: **Language** = the call's
+language, **Stage Name** = its disposition, **Sender ID** = its conversation_id. At most {MAX_CALLS} calls.
+Rating columns keep the template's own values; testers review them before submitting.
+
+**Errors:** 403 without `report.export` or project access; 404 if none of the ids exist in the project; 422 if
+more than {MAX_CALLS} ids are sent.""",
+    responses={
+        200: {"description": "The filled .xlsx workbook.", "content": {_XLSX: {"schema": {"type": "string", "format": "binary"}}}},
+        403: FORBIDDEN_EXAMPLE,
+        401: UNAUTHORIZED_EXAMPLE,
+    },
+)
+async def export_uat_xlsx(
+    project_id: str = Query(..., description="The project (Mongo ObjectId) the calls belong to.", examples=["6aae5deae9a48c4dc62aa398"]),
+    body: UatReportRequest = Body(...),
+    identity: IdentityContext = Depends(require_permission("report.export")),
+    source: ProjectCallSource = Depends(resolve_project_source),
+) -> Response:
+    ensure_project_access(identity, project_id)
+    calls = await call_repo.get_many_by_conversation_ids(
+        list(dict.fromkeys(body.conversation_ids)),
+        project_id,
+        collection=source.collection,
+        adapter=source.adapter,
+        organization_id=source.organization_id,
+    )
+    if not calls:
+        raise NotFoundError("None of the selected calls were found")
+    return Response(
+        content=build_uat_xlsx(calls),
+        media_type=_XLSX,
+        headers={"Content-Disposition": "attachment; filename=Unit_Test_Report.xlsx"},
     )

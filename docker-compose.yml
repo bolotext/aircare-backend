@@ -18,9 +18,6 @@ services:
     network_mode: host
     env_file:
       - services/api-gateway/.env
-    environment:
-      USERS_SERVICE_URL: http://localhost:45452
-      REPORTS_SERVICE_URL: http://localhost:45454
       # Worker process count (no --reload in this production entrypoint —
       # see services/api-gateway/entrypoint.sh). Defaults to 2 if unset;
       # override here per environment, e.g. WEB_CONCURRENCY: "4".
@@ -49,7 +46,7 @@ services:
     env_file:
       - services/reports/.env
     environment:
-      USERS_SERVICE_URL: http://localhost:45452
+      USERS_SERVICE_URL: http://localhost:45462
       # Worker process count (no --reload in this production entrypoint —
       # see services/reports/entrypoint.sh). Defaults to 2 if unset; override
       # here per environment, e.g. WEB_CONCURRENCY: "4".

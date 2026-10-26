@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # Upstream service base URLs. Only `users_service_url` is required today.
-    users_service_url: str = "http://localhost:45452"
+    users_service_url: str = "http://localhost:45462"
     reports_service_url: str | None = None
     mcp_clients_service_url: str | None = None
     voicebot_service_url: str | None = None
@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # Needed because this is the only service a browser talks to (see
     # app.py) and none of the upstream services set CORS headers themselves.
     cors_allowed_origins: str = (
-        "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:4173"
+        "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:4173,http://localhost:45466"
     )
 
     @property

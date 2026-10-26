@@ -34,5 +34,5 @@ ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app/services/api-gateway/src:/app/libs/common/src"
 
 WORKDIR /app/services/api-gateway
-EXPOSE 45451
+EXPOSE 45461
 ENTRYPOINT ["./entrypoint.sh"]

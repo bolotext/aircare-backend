@@ -31,5 +31,5 @@ ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app/services/reports/src:/app/libs/common/src"
 
 WORKDIR /app/services/reports
-EXPOSE 45454
+EXPOSE 45464
 ENTRYPOINT ["./entrypoint.sh"]

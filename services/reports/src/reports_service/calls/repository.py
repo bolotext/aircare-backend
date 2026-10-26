@@ -213,6 +213,28 @@ async def get_by_conversation_id(
     return _with_source(Call.model_validate(doc), doc) if doc is not None else None
 
 
+async def get_many_by_conversation_ids(
+    conversation_ids: list[str],
+    project_id: str,
+    collection: AsyncIOMotorCollection,
+    adapter: Callable[..., dict] | None = None,
+    organization_id: str | None = None,
+) -> list[Call]:
+    """The calls for `conversation_ids` within one project, in the order
+    requested; ids that don't exist are skipped. Same project scoping rules
+    as get_by_conversation_id, but reads the collection once rather than once
+    per id (the adapter path loads the whole collection each time)."""
+
+    wanted = set(conversation_ids)
+    if adapter is not None:
+        calls = await fetch_normalized_calls(collection, adapter, project_id, organization_id or "")
+        found = {c.conversation_id: c for c in calls if c.conversation_id in wanted}
+    else:
+        cursor = collection.find({"conversation_id": {"$in": list(wanted)}, "project_id": PydanticObjectId(project_id)})
+        found = {doc["conversation_id"]: Call.model_validate(doc) async for doc in cursor}
+    return [found[cid] for cid in conversation_ids if cid in found]
+
+
 async def get_with_raw_source_by_conversation_id(
     conversation_id: str,
     project_id: str,

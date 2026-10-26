@@ -3,7 +3,7 @@
 RBAC-gated call reporting: paginated call list, call detail (transcript,
 event timeline, tool results), dashboard metrics, CSV export, and the daily
 automailer (scheduled HTML summary + CSV email, manual trigger, recipient
-configuration). Runs on `:45454`. See the
+configuration). Runs on `:45464`. See the
 [repo root README](../../README.md) for how this fits into the overall
 microservices layout.
 
@@ -204,7 +204,7 @@ cd services/reports && uv run python main.py seed-calls \
 ### Run locally
 
 ```bash
-uv run python main.py serve   # starts the API on :45454
+uv run python main.py serve   # starts the API on :45464
 ```
 
 ### Tests

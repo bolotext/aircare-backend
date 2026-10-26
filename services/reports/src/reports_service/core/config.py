@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # Identity is resolved via the Users service's internal introspection
     # endpoint rather than decoding JWTs locally.
-    users_service_url: str = "http://localhost:45452"
+    users_service_url: str = "http://localhost:45462"
     internal_api_key: str = "change-me-internal-key"
     introspect_timeout_seconds: float = 5.0
 

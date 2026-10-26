@@ -29,6 +29,7 @@ def _route_map() -> dict[str, str | None]:
         "calls": settings.reports_service_url,
         "dashboard": settings.reports_service_url,
         "export.csv": settings.reports_service_url,
+        "export.xlsx": settings.reports_service_url,
         "recipients": settings.reports_service_url,
         "run": settings.reports_service_url,
         "runs": settings.reports_service_url,
