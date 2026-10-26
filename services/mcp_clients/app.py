@@ -17,7 +17,7 @@ driver.
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="AirCare MCP Clients Service",
+        title="Manappuram MCP Clients Service",
         description=_DESCRIPTION,
         version="1.0.0",
         openapi_tags=[

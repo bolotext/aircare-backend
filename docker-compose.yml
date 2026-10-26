@@ -4,7 +4,8 @@ services:
     build:
       context: .
       dockerfile: services/users/Dockerfile
-    container_name: aircare_users
+    image: manappuram_users
+    container_name: manappuram_users
     network_mode: host
     env_file:
       - services/users/.env
@@ -14,7 +15,8 @@ services:
     build:
       context: .
       dockerfile: services/api-gateway/Dockerfile
-    container_name: aircare_api_gateway
+    image: manappuram_api_gateway
+    container_name: manappuram_api_gateway
     network_mode: host
     env_file:
       - services/api-gateway/.env
@@ -31,7 +33,8 @@ services:
   #   build:
   #     context: .
   #     dockerfile: services/mcp_clients/Dockerfile
-  #   container_name: aircare_mcp_clients
+  #   image: manappuram_mcp_clients
+  #   container_name: manappuram_mcp_clients
   #   network_mode: host
   #   env_file:
   #     - services/mcp_clients/.env
@@ -41,7 +44,8 @@ services:
     build:
       context: .
       dockerfile: services/reports/Dockerfile
-    container_name: aircare_reports
+    image: manappuram_reports
+    container_name: manappuram_reports
     network_mode: host
     env_file:
       - services/reports/.env

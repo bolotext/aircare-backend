@@ -98,7 +98,7 @@ async def run_report(
     try:
         await send_mail(
             to_addrs=recipients,
-            subject=f"AirCare Call Report — {_scope_label(scope)} — {date_label}",
+            subject=f"Manappuram Call Report — {_scope_label(scope)} — {date_label}",
             message=html,
             is_html=True,
         )

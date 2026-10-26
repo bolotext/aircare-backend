@@ -23,7 +23,7 @@ settings = get_settings()
 logging.basicConfig(level=settings.log_level)
 
 _DESCRIPTION = f"""
-RBAC-gated call reporting for AirCare: paginated call list, call detail
+RBAC-gated call reporting for Manappuram: paginated call list, call detail
 (transcript, event timeline, tool results), dashboard metrics, CSV export,
 the daily automailer (scheduled HTML summary email, manual trigger,
 recipient configuration), project-scoped patient roster CRUD, and (Admin
@@ -65,7 +65,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="AirCare Reports Service",
+        title="Manappuram Reports Service",
         description=_DESCRIPTION,
         version="1.0.0",
         openapi_tags=_TAGS_METADATA,

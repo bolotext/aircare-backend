@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
 
 
 _DESCRIPTION = """
-Single entry point for AirCare's backend: a thin reverse proxy that forwards every `/api/v1/*` request to
+Single entry point for Manappuram's backend: a thin reverse proxy that forwards every `/api/v1/*` request to
 the upstream microservice that owns it (Users, Reports, MCP Clients, or Voicebot — see the route map in
 `app.py::_route_map`), based on the first path segment, and relays that service's response back unmodified.
 
@@ -73,7 +73,7 @@ itself, relayed as-is.
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="AirCare API Gateway", description=_DESCRIPTION, version="1.0.0", lifespan=lifespan)
+    app = FastAPI(title="Manappuram API Gateway", description=_DESCRIPTION, version="1.0.0", lifespan=lifespan)
     register_exception_handlers(app)
 
     # This gateway is the only service a browser calls directly (see the

@@ -22,7 +22,7 @@ def _serve(log_level: str, reload: bool = False, workers: int | None = None) -> 
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="AirCare MCP Clients service")
+    parser = argparse.ArgumentParser(description="Manappuram MCP Clients service")
     parser.add_argument("command", nargs="?", default="serve", choices=["serve"])
     parser.add_argument("--log-level", default="info")
     parser.add_argument(

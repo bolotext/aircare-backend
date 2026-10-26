@@ -1,4 +1,4 @@
-# AirCare Backend
+# Manappuram Backend
 
 Microservice backend for RBAC-gated call reporting: a dashboard with project-scoped access control, a paginated call list and call detail view (transcript, event timeline, tool results), page-1 summary metrics, CSV export, and a daily automailer (HTML summary, identical metrics to the dashboard, sent via the internal mail-relay HTTP API). See `docs/KNOWN_LIMITATIONS.md` for exactly what is and isn't real in this build, and `docs/SCHEMA_AND_INDEXES.md` for the full Mongo schema.
 

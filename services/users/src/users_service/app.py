@@ -22,7 +22,7 @@ settings = get_settings()
 logging.basicConfig(level=settings.log_level)
 
 _DESCRIPTION = f"""
-Identity, RBAC, and tenancy for AirCare: login/session management, organizations, users, projects, and the
+Identity, RBAC, and tenancy for Manappuram: login/session management, organizations, users, projects, and the
 project-to-user assignments that scope non-Admin access. Also the platform's single source of truth for
 per-project report data location (`report_db_name`/`report_collection_name`), which the Reports service
 resolves via this service's internal endpoints.
@@ -64,7 +64,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="AirCare Users Service",
+        title="Manappuram Users Service",
         description=_DESCRIPTION,
         version="1.0.0",
         openapi_tags=_TAGS_METADATA,
