@@ -31,6 +31,9 @@ def _to_out(project: Project) -> ProjectOut:
         report_db_name=project.report_db_name,
         report_collection_name=project.report_collection_name,
         status=project.status,
+        customer_details_collection_name=project.customer_details_collection_name,
+        customer_details_fields=project.customer_details_fields,
+        field_mapping=project.field_mapping,
         created_by=str(project.created_by),
         created_at=project.created_at,
         updated_at=project.updated_at,
@@ -79,6 +82,7 @@ async def create_project(
         code=payload.code,
         report_db_name=payload.report_db_name,
         report_collection_name=payload.report_collection_name,
+        customer_details_collection_name=payload.customer_details_collection_name or None,
     )
     return success_response(code=201, message="Project created", data=_to_out(project))
 
@@ -125,8 +129,9 @@ async def get_project(
     "/{project_id}",
     response_model=SuccessResponse[ProjectOut],
     summary="Update a project",
-    description="""Partially updates a project's name/status — only the fields present in the request body
-are changed. `report_db_name`/`report_collection_name` cannot be changed through this endpoint.
+    description="""Partially updates a project — only the fields present in the request body are changed. This
+includes the data source (`report_db_name`, `report_collection_name`, `customer_details_collection_name`).
+Changing the report source does not migrate an existing `field_mapping`.
 
 **When to use:** renaming a project, or archiving one that's no longer active.
 
@@ -139,7 +144,21 @@ async def update_project(
     payload: ProjectUpdate = Body(...),
     auth: AuthContext = Depends(require_permission("project.create")),
 ) -> dict:
-    project = await project_service.update_project(auth, project_id, name=payload.name, status=payload.status)
+    project = await project_service.update_project(
+        auth,
+        project_id,
+        name=payload.name,
+        status=payload.status,
+        field_mapping=payload.field_mapping,
+        customer_details_fields=(
+            [f.model_dump() for f in payload.customer_details_fields]
+            if payload.customer_details_fields is not None
+            else None
+        ),
+        report_db_name=payload.report_db_name,
+        report_collection_name=payload.report_collection_name,
+        customer_details_collection_name=payload.customer_details_collection_name,
+    )
     return success_response(message="Project updated", data=_to_out(project))
 
 

@@ -4,7 +4,7 @@ JWTs itself, so a disable/role-change/reassignment in the Users service takes
 effect on the very next request here too (introspect re-reads the DB).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 from common.errors import BadGatewayError, NotFoundError, UnauthorizedError
@@ -60,6 +60,9 @@ class ProjectConfig:
     organization_id: str
     report_db_name: str
     report_collection_name: str
+    field_mapping: dict[str, str] = field(default_factory=dict)
+    customer_details_collection_name: str | None = None
+    customer_details_fields: list[dict[str, str]] = field(default_factory=list)
 
 
 async def get_project_config(client: httpx.AsyncClient, project_id: str) -> ProjectConfig:
@@ -92,4 +95,7 @@ async def get_project_config(client: httpx.AsyncClient, project_id: str) -> Proj
         organization_id=data["organization_id"],
         report_db_name=data["report_db_name"],
         report_collection_name=data["report_collection_name"],
+        field_mapping=data.get("field_mapping") or {},
+        customer_details_collection_name=data.get("customer_details_collection_name"),
+        customer_details_fields=data.get("customer_details_fields") or [],
     )

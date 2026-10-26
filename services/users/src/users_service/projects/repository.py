@@ -13,6 +13,7 @@ async def create_project(
     report_db_name: str,
     report_collection_name: str,
     created_by: PydanticObjectId,
+    customer_details_collection_name: str | None = None,
 ) -> Project:
     project = Project(
         organization_id=organization_id,
@@ -20,6 +21,7 @@ async def create_project(
         code=code,
         report_db_name=report_db_name,
         report_collection_name=report_collection_name,
+        customer_details_collection_name=customer_details_collection_name,
         created_by=created_by,
     )
     await project.insert()
@@ -48,12 +50,30 @@ async def list_by_ids(project_ids: list[PydanticObjectId]) -> list[Project]:
 
 
 async def update_project(
-    project: Project, name: str | None = None, status: ProjectStatus | None = None
+    project: Project,
+    name: str | None = None,
+    status: ProjectStatus | None = None,
+    field_mapping: dict[str, str] | None = None,
+    report_db_name: str | None = None,
+    report_collection_name: str | None = None,
+    customer_details_collection_name: str | None = None,
+    customer_details_fields: list[dict] | None = None,
 ) -> Project:
     if name is not None:
         project.name = name
     if status is not None:
         project.status = status
+    if field_mapping is not None:
+        project.field_mapping = field_mapping
+    if customer_details_fields is not None:
+        project.customer_details_fields = customer_details_fields
+    if report_db_name is not None:
+        project.report_db_name = report_db_name
+    if report_collection_name is not None:
+        project.report_collection_name = report_collection_name
+    if customer_details_collection_name is not None:
+        # An empty string clears the optional collection.
+        project.customer_details_collection_name = customer_details_collection_name or None
     project.updated_at = datetime.now(timezone.utc)
     await project.save()
     return project

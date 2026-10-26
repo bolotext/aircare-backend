@@ -10,6 +10,7 @@ from reports_service.calls import repository as call_repo
 from reports_service.calls.model import Call
 from reports_service.calls.recording import fetch_recording_audio, resolve_recording_ref
 from reports_service.calls.repository import CallFilter, day_range_bounds
+from reports_service.calls.mapped_fields import extract_fields, mapped_columns, source_document
 from reports_service.calls.schema import CallDetail, CallListItem, PaginatedCalls
 from reports_service.core.config import get_settings
 from reports_service.core.deps import ProjectCallSource, ensure_project_access, require_permission, resolve_project_source
@@ -26,8 +27,9 @@ _LIST_EXAMPLE = {
 _DETAIL_EXAMPLE = CallDetail.model_config["json_schema_extra"]["example"]
 
 
-def _to_list_item(call: Call) -> CallListItem:
+def _to_list_item(call: Call, field_mapping: dict[str, str] | None = None) -> CallListItem:
     return CallListItem(
+        fields=extract_fields(call._source_doc, field_mapping or {}),
         conversation_id=call.conversation_id,
         project_id=str(call.project_id),
         bot_id=call.bot_id,
@@ -47,6 +49,7 @@ def _to_detail(call: Call, *, recording_available: bool) -> CallDetail:
         **_to_list_item(call).model_dump(),
         organization_id=str(call.organization_id),
         raw=call.raw,
+        source_document=source_document(call._source_doc),
         recording_available=recording_available,
     )
 
@@ -84,6 +87,10 @@ async def list_calls(
     disposition: str | None = Query(
         default=None, description="Exact-match disposition filter, e.g. `RESOLVED`, `ABANDONED`.", examples=["RESOLVED"]
     ),
+    call_status: str | None = Query(default=None, description="Exact-match call status filter, e.g. `ANSWERED`.", examples=["ANSWERED"]),
+    search: str | None = Query(
+        default=None, max_length=100, description="Case-insensitive substring match on conversation_id.", examples=["17930"]
+    ),
     page: int = Query(default=1, ge=1, description="1-indexed page number to return."),
     page_size: int | None = Query(
         default=None,
@@ -106,6 +113,8 @@ async def list_calls(
         date_to=window_end,
         language=language,
         disposition=disposition,
+        call_status=call_status,
+        search=search,
     )
     items, total = await call_repo.list_paginated(
         call_filter,
@@ -117,7 +126,11 @@ async def list_calls(
     )
     return success_response(
         data=PaginatedCalls(
-            items=[_to_list_item(c) for c in items], page=page, page_size=effective_page_size, total=total
+            columns=mapped_columns(source.field_mapping),
+            items=[_to_list_item(c, source.field_mapping) for c in items],
+            page=page,
+            page_size=effective_page_size,
+            total=total,
         )
     )
 

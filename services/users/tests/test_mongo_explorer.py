@@ -39,3 +39,21 @@ async def test_non_admin_cannot_browse_mongo(client):
 
     resp = await client.get("/api/v1/mongo/databases/aircare/collections", headers=auth_header(supervisor))
     assert code(resp) == 403
+
+
+async def test_admin_lists_field_names_without_values(client):
+    admin = await make_user(None, Role.ADMIN, "admin-mongo-fields@example.com")
+
+    resp = await client.get("/api/v1/mongo/databases/aircare/collections/roles/fields", headers=auth_header(admin))
+    assert code(resp) == 200
+    names = data(resp)
+    assert isinstance(names, list)
+    assert "_id" in names
+
+
+async def test_non_admin_cannot_list_fields(client):
+    supervisor = await make_user(None, Role.SUPERVISOR, "supervisor-mongo-fields@example.com")
+
+    resp = await client.get("/api/v1/mongo/databases/aircare/collections/roles/fields", headers=auth_header(supervisor))
+    assert code(resp) == 403
+

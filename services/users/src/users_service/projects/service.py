@@ -1,6 +1,6 @@
 from beanie import PydanticObjectId
 from common.enums import Role
-from common.errors import ConflictError, ForbiddenError, NotFoundError
+from common.errors import BadRequestError, ConflictError, ForbiddenError, NotFoundError
 
 from users_service.core.deps import AuthContext
 from users_service.enums import ProjectStatus
@@ -17,6 +17,7 @@ async def create_project(
     code: str,
     report_db_name: str,
     report_collection_name: str,
+    customer_details_collection_name: str | None = None,
 ) -> Project:
     if await organization_repo.get_by_id(organization_id) is None:
         raise NotFoundError("Organization not found")
@@ -28,6 +29,7 @@ async def create_project(
         code=code,
         report_db_name=report_db_name,
         report_collection_name=report_collection_name,
+        customer_details_collection_name=customer_details_collection_name,
         created_by=auth.user_id,
     )
 
@@ -59,12 +61,37 @@ async def get_project(auth: AuthContext, project_id: PydanticObjectId) -> Projec
 
 
 async def update_project(
-    auth: AuthContext, project_id: PydanticObjectId, name: str | None, status: ProjectStatus | None
+    auth: AuthContext,
+    project_id: PydanticObjectId,
+    name: str | None,
+    status: ProjectStatus | None,
+    field_mapping: dict[str, str] | None = None,
+    report_db_name: str | None = None,
+    report_collection_name: str | None = None,
+    customer_details_collection_name: str | None = None,
+    customer_details_fields: list[dict] | None = None,
 ) -> Project:
     project = await project_repo.get_by_id(project_id)
     if project is None:
         raise NotFoundError("Project not found")
-    return await project_repo.update_project(project, name=name, status=status)
+    if field_mapping is not None:
+        field_mapping = {k.strip(): v.strip() for k, v in field_mapping.items()}
+        if any(not k or not v for k, v in field_mapping.items()):
+            raise BadRequestError("Field mapping names must not be empty", {"field": "field_mapping"})
+    if customer_details_fields is not None:
+        keys = [f["key"].lower() for f in customer_details_fields]
+        if len(set(keys)) != len(keys):
+            raise BadRequestError("Customer field keys must be unique", {"field": "customer_details_fields"})
+    return await project_repo.update_project(
+        project,
+        name=name,
+        status=status,
+        field_mapping=field_mapping,
+        report_db_name=report_db_name,
+        report_collection_name=report_collection_name,
+        customer_details_collection_name=customer_details_collection_name,
+        customer_details_fields=customer_details_fields,
+    )
 
 
 async def assign_user(

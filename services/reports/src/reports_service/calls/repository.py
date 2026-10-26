@@ -5,6 +5,7 @@ so "identical filter logic" is structurally true rather than coincidentally
 true.
 """
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
@@ -24,6 +25,9 @@ class CallFilter:
     date_to: datetime | None = None
     language: str | None = None
     disposition: str | None = None
+    call_status: str | None = None
+    # Case-insensitive substring match on conversation_id.
+    search: str | None = None
 
 
 def day_range_bounds(date_from: date | None, date_to: date | None) -> tuple[datetime | None, datetime | None]:
@@ -60,7 +64,16 @@ def build_mongo_query(call_filter: CallFilter) -> dict:
         query["language"] = call_filter.language
     if call_filter.disposition:
         query["disposition"] = call_filter.disposition
+    if call_filter.call_status:
+        query["call_status"] = call_filter.call_status
+    if call_filter.search:
+        query["conversation_id"] = {"$regex": re.escape(call_filter.search), "$options": "i"}
     return query
+
+
+def _with_source(call: Call, doc: dict) -> Call:
+    call._source_doc = doc
+    return call
 
 
 def _default_collection() -> AsyncIOMotorCollection:
@@ -87,7 +100,7 @@ async def fetch_normalized_calls(
     """
 
     raw_docs = await coll.find({}).to_list(None)
-    return [Call.model_validate(adapter(doc, project_id=project_id, organization_id=organization_id)) for doc in raw_docs]
+    return [_with_source(Call.model_validate(adapter(doc, project_id=project_id, organization_id=organization_id)), doc) for doc in raw_docs]
 
 
 def matches_filter(call: Call, call_filter: CallFilter) -> bool:
@@ -106,6 +119,10 @@ def matches_filter(call: Call, call_filter: CallFilter) -> bool:
     if call_filter.language and call.language != call_filter.language:
         return False
     if call_filter.disposition and call.disposition != call_filter.disposition:
+        return False
+    if call_filter.call_status and call.call_status != call_filter.call_status:
+        return False
+    if call_filter.search and call_filter.search.lower() not in call.conversation_id.lower():
         return False
     return True
 
@@ -142,7 +159,7 @@ async def list_paginated(
     query = build_mongo_query(call_filter)
     total = await coll.count_documents(query)
     cursor = coll.find(query).sort("call_start_time", -1).skip((page - 1) * page_size).limit(page_size)
-    items = [Call.model_validate(doc) async for doc in cursor]
+    items = [_with_source(Call.model_validate(doc), doc) async for doc in cursor]
     return items, total
 
 
@@ -193,7 +210,7 @@ async def get_by_conversation_id(
         return next((c for c in calls if c.conversation_id == conversation_id), None)
 
     doc = await coll.find_one({"conversation_id": conversation_id, "project_id": PydanticObjectId(project_id)})
-    return Call.model_validate(doc) if doc is not None else None
+    return _with_source(Call.model_validate(doc), doc) if doc is not None else None
 
 
 async def get_with_raw_source_by_conversation_id(

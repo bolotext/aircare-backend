@@ -1,6 +1,15 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class MappedColumn(BaseModel):
+    """One Conversation Logs column configured in the project's Field Mapper."""
+
+    key: str = Field(description="Canonical (preferred) field name; also the key in each item's `fields`.")
+    raw_field: str = Field(description="The raw source field it maps to.")
+    restricted: bool = Field(description="True when the raw field holds personal data and its values are withheld.")
 
 
 class CallListItem(BaseModel):
@@ -37,6 +46,7 @@ class CallListItem(BaseModel):
     call_end_time: datetime | None = Field(description="UTC timestamp the call ended, or `null` if it's still open/was never connected.")
     connected_seconds: float | None = Field(description="Talk time in seconds while connected, or `null` when not applicable (e.g. unanswered).")
     tool_failure_count: int = Field(description="Number of tool/function-call invocations during this call that failed.")
+    fields: dict[str, Any] = Field(default_factory=dict, description="Values of the project's Field Mapper columns; populated on `GET /calls` only.")
 
 
 class CallDetail(CallListItem):
@@ -58,6 +68,10 @@ class CallDetail(CallListItem):
 
     organization_id: str = Field(description="The organization (Mongo ObjectId) that owns this call's project.")
     raw: dict = Field(description="Project-specific operational detail not modeled as typed fields above (e.g. conversation transcript, event timeline). PII fields, if any, have already been stripped by the source's schema adapter before this response is built.")
+    source_document: dict = Field(
+        default_factory=dict,
+        description="The call's full source Mongo document (all top-level fields). Personal-data fields keep their key but their value is withheld.",
+    )
     recording_available: bool = Field(
         description="Whether `GET /calls/{conversation_id}/recording` has a recording to serve for this call — "
         "lets a caller decide to fetch it right away instead of waiting for a separate user action. Always "
@@ -79,6 +93,7 @@ class PaginatedCalls(BaseModel):
         }
     )
 
+    columns: list[MappedColumn] = Field(default_factory=list, description="The project's Field Mapper columns, in order. Empty when none are configured.")
     items: list[CallListItem] = Field(description="Calls on this page, most recent (`call_start_time`) first.")
     page: int = Field(description="The page number this response corresponds to (1-indexed).")
     page_size: int = Field(description="Number of items per page that was actually applied (see the `page_size` query parameter's cap).")

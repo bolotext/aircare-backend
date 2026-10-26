@@ -172,3 +172,109 @@ async def test_assigning_an_admin_user_is_rejected(client):
         json={"user_id": str(other_admin.id)},
     )
     assert code(resp) == 409
+
+
+async def test_admin_saves_and_reads_back_field_mapping(client):
+    org = await make_org("Org FM", "org-fm")
+    admin = await make_user(None, Role.ADMIN, "admin-fm@example.com")
+    project = await make_project(org.id, "Proj FM", "proj-fm")
+    mapping = {"phone_number": "customerPhone", "call_type": "callType"}
+
+    resp = await client.patch(
+        f"/api/v1/projects/{project.id}", headers=auth_header(admin), json={"field_mapping": mapping}
+    )
+    assert code(resp) == 200
+    assert data(resp)["field_mapping"] == mapping
+
+    resp = await client.patch(
+        f"/api/v1/projects/{project.id}", headers=auth_header(admin), json={"field_mapping": {"": "x"}}
+    )
+    assert code(resp) == 400
+
+
+async def test_admin_edits_data_source_and_customer_details_collection(client):
+    org = await make_org("Org DS", "org-ds")
+    admin = await make_user(None, Role.ADMIN, "admin-ds@example.com")
+
+    created = await client.post(
+        "/api/v1/projects",
+        headers=auth_header(admin),
+        json={
+            "organization_id": str(org.id),
+            "name": "DS",
+            "code": "ds",
+            "report_db_name": "aircare",
+            "report_collection_name": "calls",
+            "customer_details_collection_name": "customers",
+        },
+    )
+    assert code(created) == 201
+    project = data(created)
+    assert project["customer_details_collection_name"] == "customers"
+
+    resp = await client.patch(
+        f"/api/v1/projects/{project['id']}",
+        headers=auth_header(admin),
+        json={"report_collection_name": "call_logs", "customer_details_collection_name": ""},
+    )
+    assert code(resp) == 200
+    updated = data(resp)
+    assert updated["report_collection_name"] == "call_logs"
+    assert updated["report_db_name"] == "aircare"
+    assert updated["customer_details_collection_name"] is None
+
+
+async def test_customer_details_field_schema_validation(client):
+    org = await make_org("Org CF", "org-cf")
+    admin = await make_user(None, Role.ADMIN, "admin-cf@example.com")
+    project = await make_project(org.id, "CF", "cf")
+    url = f"/api/v1/projects/{project.id}"
+
+    ok = await client.patch(
+        url, headers=auth_header(admin), json={"customer_details_fields": [{"key": "city", "type": "string"}, {"key": "age", "type": "int"}]}
+    )
+    assert code(ok) == 200
+    assert data(ok)["customer_details_fields"] == [
+        {"key": "city", "type": "string", "options": []},
+        {"key": "age", "type": "int", "options": []},
+    ]
+
+    dup = await client.patch(
+        url, headers=auth_header(admin), json={"customer_details_fields": [{"key": "city", "type": "text"}, {"key": "City", "type": "number"}]}
+    )
+    assert code(dup) == 400
+
+    from pydantic import ValidationError
+
+    from users_service.projects.schema import CustomerFieldSpec
+
+    for bad in ({"key": "_id", "type": "text"}, {"key": "1abc", "type": "text"}, {"key": "x", "type": "blob"}):
+        with pytest.raises(ValidationError):
+            CustomerFieldSpec(**bad)
+
+
+async def test_customer_field_options_validation(client):
+    from pydantic import ValidationError
+
+    from users_service.projects.schema import CustomerFieldSpec
+
+    spec = CustomerFieldSpec(key="language", type="string", options=[" Hindi ", "English"])
+    assert spec.options == ["Hindi", "English"]
+    for bad in (
+        {"key": "a", "type": "string", "options": ["x", "X"]},
+        {"key": "a", "type": "string", "options": [""]},
+        {"key": "a", "type": "bool", "options": ["yes"]},
+    ):
+        with pytest.raises(ValidationError):
+            CustomerFieldSpec(**bad)
+
+    org = await make_org("Org OP", "org-op")
+    admin = await make_user(None, Role.ADMIN, "admin-op@example.com")
+    project = await make_project(org.id, "OP", "op")
+    resp = await client.patch(
+        f"/api/v1/projects/{project.id}",
+        headers=auth_header(admin),
+        json={"customer_details_fields": [{"key": "language", "type": "string", "options": ["Hindi", "English"]}]},
+    )
+    assert code(resp) == 200
+    assert data(resp)["customer_details_fields"][0]["options"] == ["Hindi", "English"]

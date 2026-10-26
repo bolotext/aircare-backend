@@ -21,6 +21,8 @@ router = APIRouter(prefix="/mongo", tags=["mongo-explorer"])
 # own internal bookkeeping, not application data.
 _SYSTEM_DB_NAMES = {"admin", "local", "config"}
 
+_FIELD_SAMPLE_SIZE = 50
+
 _UNREACHABLE_EXAMPLE = {
     "summary": "Mongo server unreachable",
     "value": {"status": "error", "code": 502, "message": "Unable to reach the Mongo server", "errors": {"type": "BAD_GATEWAY"}},
@@ -79,3 +81,30 @@ async def list_collections(
         raise BadGatewayError("Unable to reach the Mongo server") from exc
 
     return success_response(data=sorted(name for name in names if not name.startswith("system.")))
+
+
+@router.get(
+    "/databases/{db_name}/collections/{collection_name}/fields",
+    response_model=SuccessResponse[list[str]],
+    summary="[Admin] List top-level field names in a Mongo collection",
+    description="""Returns the union of top-level field names seen in a small sample of documents. Field
+names only — no values are returned, so no call data/PII leaves the database.
+
+**When to use:** populating the raw-field picker of a project's Field Mapper.
+
+**Errors:** 403 if the caller lacks `project.create`; 502 if the Mongo server can't be reached.""",
+    responses=success_and_error_responses(
+        "Field names", ["call_id", "customerPhone", "language"], UNAUTHORIZED_EXAMPLE, FORBIDDEN_EXAMPLE, _UNREACHABLE_EXAMPLE
+    ),
+)
+async def list_fields(
+    db_name: str = Path(..., description="The database (see `GET /mongo/databases`).", examples=["aircare"]),
+    collection_name: str = Path(..., description="The collection to sample.", examples=["calls"]),
+    auth: AuthContext = Depends(require_permission("project.create")),
+) -> dict:
+    try:
+        docs = await get_client()[db_name][collection_name].find({}).limit(_FIELD_SAMPLE_SIZE).to_list(_FIELD_SAMPLE_SIZE)
+    except Exception as exc:
+        raise BadGatewayError("Unable to reach the Mongo server") from exc
+
+    return success_response(data=sorted({key for doc in docs for key in doc}))

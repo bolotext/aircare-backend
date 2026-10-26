@@ -11,7 +11,7 @@ logic needs to reason about.
 from datetime import datetime, timezone
 
 from beanie import Document, PydanticObjectId
-from pydantic import Field
+from pydantic import Field, PrivateAttr
 from pymongo import IndexModel
 
 
@@ -37,6 +37,11 @@ class Call(Document):
     raw: dict = Field(default_factory=dict)
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    # The source Mongo document this Call was read from, set by the read paths
+    # in calls.repository. Never serialized; only used to resolve a project's
+    # Field Mapper columns (see calls.mapped_fields).
+    _source_doc: dict | None = PrivateAttr(default=None)
 
     class Settings:
         name = "calls"

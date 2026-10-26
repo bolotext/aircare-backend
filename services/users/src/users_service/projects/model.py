@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Any
 
 from beanie import Document, PydanticObjectId
 from pydantic import Field
@@ -17,7 +18,16 @@ class Project(Document):
     # own already-populated report data.
     report_db_name: str
     report_collection_name: str
+    # Optional collection (in report_db_name) holding customer details.
+    customer_details_collection_name: str | None = None
     status: ProjectStatus = ProjectStatus.ACTIVE
+    # Schema of one customer-details record: [{"key": "city", "type": "text"}, ...].
+    # Types are Mongo $type aliases: string|int|long|double|decimal|bool|date|objectId|array|object. See projects.schema.CustomerFieldSpec.
+    customer_details_fields: list[dict[str, Any]] = Field(default_factory=list)
+    # Canonical (preferred) field name -> raw field name in the report
+    # collection, e.g. {"phone_number": "customerPhone"}. Stored only; the
+    # reports service does not apply it yet.
+    field_mapping: dict[str, str] = Field(default_factory=dict)
     created_by: PydanticObjectId
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

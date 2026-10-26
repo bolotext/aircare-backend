@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 from common.errors import ForbiddenError, UnauthorizedError, UnprocessableEntityError
@@ -55,6 +55,8 @@ class ProjectCallSource:
     collection: AsyncIOMotorCollection
     organization_id: str
     adapter: Callable[..., dict] | None
+    # Canonical field name -> raw field name (see users_service Project.field_mapping).
+    field_mapping: dict[str, str] = field(default_factory=dict)
 
 
 async def resolve_project_source_for_client(http_client: httpx.AsyncClient, project_id: str) -> ProjectCallSource:
@@ -84,7 +86,12 @@ async def resolve_project_source_for_client(http_client: httpx.AsyncClient, proj
             "recognized schema.",
             details={"report_db_name": exc.db_name, "report_collection_name": exc.collection_name},
         ) from exc
-    return ProjectCallSource(collection=collection, organization_id=config.organization_id, adapter=adapter)
+    return ProjectCallSource(
+        collection=collection,
+        organization_id=config.organization_id,
+        adapter=adapter,
+        field_mapping=config.field_mapping,
+    )
 
 
 async def resolve_project_source(request: Request, project_id: str) -> ProjectCallSource:

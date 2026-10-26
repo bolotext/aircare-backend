@@ -55,12 +55,12 @@ ifeq ($(shell uname),Darwin)
 	@osascript -e 'tell application "Terminal" to do script "cd $(PWD)/services/users && uv run python main.py serve --reload"'
 	@osascript -e 'tell application "Terminal" to do script "cd $(PWD)/services/api-gateway && uv run python main.py --reload"'
 	@osascript -e 'tell application "Terminal" to do script "cd $(PWD)/services/reports && uv run python main.py serve --reload"'
-	@osascript -e 'tell application "Terminal" to do script "cd $(PWD)/services/mcp_clients && uv run python main.py serve --reload"'
+	#@osascript -e 'tell application "Terminal" to do script "cd $(PWD)/services/mcp_clients && uv run python main.py serve --reload"'
 else
 	@gnome-terminal -- bash -c 'cd $(PWD)/services/users && uv run python main.py serve --reload; exec bash'
 	@gnome-terminal -- bash -c 'cd $(PWD)/services/api-gateway && uv run python main.py --reload; exec bash'
 	@gnome-terminal -- bash -c 'cd $(PWD)/services/reports && uv run python main.py serve --reload; exec bash'
-	@gnome-terminal -- bash -c 'cd $(PWD)/services/mcp_clients && uv run python main.py serve --reload; exec bash'
+	#@gnome-terminal -- bash -c 'cd $(PWD)/services/mcp_clients && uv run python main.py serve --reload; exec bash'
 endif
 
 run-mcp-clients:

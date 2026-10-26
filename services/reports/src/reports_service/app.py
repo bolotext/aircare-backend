@@ -14,6 +14,7 @@ from reports_service.dashboard.router import router as dashboard_router
 from reports_service.db.mongodb import close_db, get_client, init_db
 from reports_service.export.router import router as export_router
 from reports_service.patient_calls.router import router as patient_calls_router
+from reports_service.customer_details.router import router as customer_details_router
 from reports_service.patients.router import router as patients_router
 from reports_service.reports.router import router as reports_router
 from reports_service.risk_thresholds.router import router as risk_thresholds_router
@@ -46,6 +47,7 @@ _TAGS_METADATA = [
     {"name": "export", "description": "Download the same metrics and call data shown on the dashboard as a CSV file."},
     {"name": "automailer", "description": "Configure who receives the daily report email, and trigger/inspect report runs."},
     {"name": "patients", "description": "CRUD for a project's patient roster."},
+    {"name": "customer-details", "description": "CRUD for a project's customer-details records (personal data), shaped by the project's configured field schema."},
     {"name": "patient-calls", "description": "CRUD for AQI-triggered patient advisory calls."},
     {"name": "risk-thresholds", "description": "Admin-only CRUD for the condition -> AQI risk-threshold reference table."},
     {"name": "health", "description": "Service liveness check."},
@@ -77,6 +79,7 @@ def create_app() -> FastAPI:
     app.include_router(export_router, prefix=api_v1)
     app.include_router(reports_router, prefix=api_v1)
     app.include_router(patients_router, prefix=api_v1)
+    app.include_router(customer_details_router, prefix=api_v1)
     app.include_router(patient_calls_router, prefix=api_v1)
     app.include_router(risk_thresholds_router, prefix=api_v1)
 
