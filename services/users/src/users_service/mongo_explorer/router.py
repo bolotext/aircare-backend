@@ -21,7 +21,7 @@ router = APIRouter(prefix="/mongo", tags=["mongo-explorer"])
 # own internal bookkeeping, not application data.
 _SYSTEM_DB_NAMES = {"admin", "local", "config"}
 
-_FIELD_SAMPLE_SIZE = 50  # most recent documents (by _id, newest first)
+_FIELD_SAMPLE_SIZE = 200  # most recent documents (by _id, newest first)
 
 _UNREACHABLE_EXAMPLE = {
     "summary": "Mongo server unreachable",
@@ -87,7 +87,7 @@ async def list_collections(
     "/databases/{db_name}/collections/{collection_name}/fields",
     response_model=SuccessResponse[list[str]],
     summary="[Admin] List top-level field names in a Mongo collection",
-    description="""Returns the union of top-level field names seen in the 50 most recent documents (newest `_id` first). Field
+    description="""Returns the union of top-level field names seen in the 200 most recent documents (newest `_id` first). Field
 names only — no values are returned, so no call data/PII leaves the database.
 
 **When to use:** populating the raw-field picker of a project's Field Mapper.
