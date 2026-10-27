@@ -21,7 +21,7 @@ router = APIRouter(prefix="/mongo", tags=["mongo-explorer"])
 # own internal bookkeeping, not application data.
 _SYSTEM_DB_NAMES = {"admin", "local", "config"}
 
-_FIELD_SAMPLE_SIZE = 50
+_FIELD_SAMPLE_SIZE = 50  # most recent documents (by _id, newest first)
 
 _UNREACHABLE_EXAMPLE = {
     "summary": "Mongo server unreachable",
@@ -87,7 +87,7 @@ async def list_collections(
     "/databases/{db_name}/collections/{collection_name}/fields",
     response_model=SuccessResponse[list[str]],
     summary="[Admin] List top-level field names in a Mongo collection",
-    description="""Returns the union of top-level field names seen in a small sample of documents. Field
+    description="""Returns the union of top-level field names seen in the 50 most recent documents (newest `_id` first). Field
 names only — no values are returned, so no call data/PII leaves the database.
 
 **When to use:** populating the raw-field picker of a project's Field Mapper.
@@ -103,7 +103,7 @@ async def list_fields(
     auth: AuthContext = Depends(require_permission("project.create")),
 ) -> dict:
     try:
-        docs = await get_client()[db_name][collection_name].find({}).limit(_FIELD_SAMPLE_SIZE).to_list(_FIELD_SAMPLE_SIZE)
+        docs = await get_client()[db_name][collection_name].find({}).sort("_id", -1).limit(_FIELD_SAMPLE_SIZE).to_list(_FIELD_SAMPLE_SIZE)
     except Exception as exc:
         raise BadGatewayError("Unable to reach the Mongo server") from exc
 
