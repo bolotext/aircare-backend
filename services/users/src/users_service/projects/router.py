@@ -1,11 +1,11 @@
 from beanie import PydanticObjectId
-from common.errors import BadRequestError
+from common.errors import BadRequestError, ForbiddenError
 from common.openapi import FORBIDDEN_EXAMPLE, UNAUTHORIZED_EXAMPLE, not_found_example, success_and_error_responses
 from common.responses import success_response
 from common.schemas import SuccessResponse
 from fastapi import APIRouter, Body, Depends, Path, Query
 
-from users_service.core.deps import AuthContext, require_permission
+from users_service.core.deps import AuthContext, has_permission, require_permission
 from users_service.projects import service as project_service
 from users_service.projects.model import Project, UserProjectAssignment
 from users_service.projects.schema import (
@@ -136,7 +136,7 @@ Changing the report source does not migrate an existing `field_mapping`.
 **When to use:** renaming a project, or archiving one that's no longer active.
 
 **Errors:** 403 if the caller lacks `project.update` (Admin and Supervisor; a Supervisor only for an assigned
-project); 404 if `project_id` doesn't exist.""",
+project, and never for the data source fields, which are Admin-only); 404 if `project_id` doesn't exist.""",
     responses=success_and_error_responses("Project updated", _PROJECT_EXAMPLE, UNAUTHORIZED_EXAMPLE, FORBIDDEN_EXAMPLE, not_found_example("Project")),
 )
 async def update_project(
@@ -144,6 +144,14 @@ async def update_project(
     payload: ProjectUpdate = Body(...),
     auth: AuthContext = Depends(require_permission("project.update")),
 ) -> dict:
+    # Repointing the data source could expose another tenant's collection, so it
+    # stays Admin-only; field mapping and customer fields only need project.update.
+    touches_source = any(
+        v is not None
+        for v in (payload.report_db_name, payload.report_collection_name, payload.customer_details_collection_name)
+    )
+    if touches_source and not await has_permission(auth, "project.create"):
+        raise ForbiddenError("Only administrators can change a project's data source")
     project = await project_service.update_project(
         auth,
         project_id,

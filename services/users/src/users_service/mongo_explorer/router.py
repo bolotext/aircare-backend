@@ -7,13 +7,15 @@ instead of guessed blind.
 
 from fastapi import APIRouter, Depends, Path
 
-from common.errors import BadGatewayError
+from common.enums import Role
+from common.errors import BadGatewayError, ForbiddenError
 from common.openapi import FORBIDDEN_EXAMPLE, UNAUTHORIZED_EXAMPLE, success_and_error_responses
 from common.responses import success_response
 from common.schemas import SuccessResponse
 
 from users_service.core.deps import AuthContext, require_permission
 from users_service.db.mongodb import get_client
+from users_service.projects import repository as project_repo
 
 router = APIRouter(prefix="/mongo", tags=["mongo-explorer"])
 
@@ -86,7 +88,7 @@ async def list_collections(
 @router.get(
     "/databases/{db_name}/collections/{collection_name}/fields",
     response_model=SuccessResponse[list[str]],
-    summary="[Admin] List top-level field names in a Mongo collection",
+    summary="List top-level field names in a Mongo collection (Admin, or a Supervisor for their projects' sources)",
     description="""Returns the union of top-level field names seen in the 200 most recent documents (newest `_id` first). Field
 names only — no values are returned, so no call data/PII leaves the database.
 
@@ -100,8 +102,19 @@ names only — no values are returned, so no call data/PII leaves the database.
 async def list_fields(
     db_name: str = Path(..., description="The database (see `GET /mongo/databases`).", examples=["aircare"]),
     collection_name: str = Path(..., description="The collection to sample.", examples=["calls"]),
-    auth: AuthContext = Depends(require_permission("project.create")),
+    auth: AuthContext = Depends(require_permission("project.update")),
 ) -> dict:
+    if auth.role != Role.ADMIN:
+        # Non-admins may only sample a source configured on a project assigned to them.
+        projects = await project_repo.list_by_ids(await project_repo.list_project_ids_for_user(auth.user_id))
+        allowed = {
+            (p.report_db_name, c)
+            for p in projects
+            for c in (p.report_collection_name, p.customer_details_collection_name)
+            if c
+        }
+        if (db_name, collection_name) not in allowed:
+            raise ForbiddenError("You do not have access to this collection")
     try:
         docs = await get_client()[db_name][collection_name].find({}).sort("_id", -1).limit(_FIELD_SAMPLE_SIZE).to_list(_FIELD_SAMPLE_SIZE)
     except Exception as exc:

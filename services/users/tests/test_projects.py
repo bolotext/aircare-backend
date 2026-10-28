@@ -313,3 +313,22 @@ async def test_cannot_create_project_in_suspended_organization(client):
         json={"organization_id": str(org.id), "name": "X", "code": "x", "report_db_name": "aircare", "report_collection_name": "calls"},
     )
     assert code(resp) == 409
+
+
+async def test_supervisor_edits_mapping_and_customer_fields_but_not_data_source(client):
+    org = await make_org("Org SV", "org-sv")
+    sup = await make_user(org.id, Role.SUPERVISOR, "sup-sv@example.com")
+    project = await make_project(org.id, "Proj SV", "proj-sv")
+    other = await make_project(org.id, "Proj Other", "proj-other")
+    from users_service.projects import repository as project_repo_
+
+    await project_repo_.create_assignment(sup.id, project.id, org.id, sup.id)
+    url = f"/api/v1/projects/{project.id}"
+    ok = await client.patch(url, headers=auth_header(sup), json={"field_mapping": {"phone_number": "p"}})
+    assert code(ok) == 200
+    ok = await client.patch(
+        url, headers=auth_header(sup), json={"customer_details_fields": [{"key": "name", "type": "text"}]}
+    )
+    assert code(ok) == 200
+    assert code(await client.patch(url, headers=auth_header(sup), json={"report_db_name": "x"})) == 403
+    assert code(await client.patch(f"/api/v1/projects/{other.id}", headers=auth_header(sup), json={"name": "n"})) == 403

@@ -80,6 +80,10 @@ def require_role(*allowed_roles: Role):
     return _checker
 
 
+async def has_permission(auth: AuthContext, permission: str) -> bool:
+    return _permission_service.has_permission(await _permission_service.get_role_permissions(auth.role), permission)
+
+
 def require_permission(permission: str):
     """Like require_role, but checks a fine-grained permission key against the
     caller's role via RolePermissionMapping (see users_service.permissions),
