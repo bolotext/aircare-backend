@@ -36,7 +36,7 @@ async def test_selected_calls_fill_language_stage_and_sender_id(app, client):
 async def test_more_than_ten_calls_is_rejected_and_viewer_is_forbidden(app, client):
     app.dependency_overrides[get_current_identity] = lambda: make_identity("ADMIN")
     too_many = await client.post(
-        "/api/v1/export.xlsx", params={"project_id": str(PROJECT)}, json={"conversation_ids": [f"c-{i}" for i in range(11)]}
+        "/api/v1/export.xlsx", params={"project_id": str(PROJECT)}, json={"conversation_ids": [f"c-{i}" for i in range(21)]}
     )
     assert too_many.json()["code"] == 422 or too_many.status_code == 422
 

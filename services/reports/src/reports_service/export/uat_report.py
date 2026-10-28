@@ -26,7 +26,7 @@ TEMPLATE_PATH = Path(__file__).parent / "templates" / "Unit_Test_Report_Template
 SHEET_NAME = "UAT Test sheet"
 FIRST_DATA_ROW = 11
 LAST_DATA_ROW = 70  # the summary sheet's formulas cover rows 11..70
-MAX_CALLS = 10  # product limit on one export; the template itself holds 60
+MAX_CALLS = 20  # product limit on one export; the template itself holds 60
 
 _COL_SL_NO, _COL_LANGUAGE, _COL_STAGE, _COL_SCENARIO, _COL_SENDER, _COL_COMMENTS = "A", "B", "C", "D", "F", "T"
 # Column J (Overall Call Score) is a formula and must never be cleared.
