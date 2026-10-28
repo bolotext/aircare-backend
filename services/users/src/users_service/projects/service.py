@@ -77,6 +77,7 @@ async def update_project(
     project = await project_repo.get_by_id(project_id)
     if project is None:
         raise NotFoundError("Project not found")
+    await _ensure_project_access(auth, project)
     if field_mapping is not None:
         field_mapping = {k.strip(): v.strip() for k, v in field_mapping.items()}
         if any(not k or not v for k, v in field_mapping.items()):

@@ -135,14 +135,14 @@ Changing the report source does not migrate an existing `field_mapping`.
 
 **When to use:** renaming a project, or archiving one that's no longer active.
 
-**Errors:** 403 if the caller lacks `project.create` (the permission this route is gated on); 404 if
-`project_id` doesn't exist.""",
+**Errors:** 403 if the caller lacks `project.update` (Admin and Supervisor; a Supervisor only for an assigned
+project); 404 if `project_id` doesn't exist.""",
     responses=success_and_error_responses("Project updated", _PROJECT_EXAMPLE, UNAUTHORIZED_EXAMPLE, FORBIDDEN_EXAMPLE, not_found_example("Project")),
 )
 async def update_project(
     project_id: PydanticObjectId = Path(..., description="The project to update.", examples=["6aae5deae9a48c4dc62aa398"]),
     payload: ProjectUpdate = Body(...),
-    auth: AuthContext = Depends(require_permission("project.create")),
+    auth: AuthContext = Depends(require_permission("project.update")),
 ) -> dict:
     project = await project_service.update_project(
         auth,

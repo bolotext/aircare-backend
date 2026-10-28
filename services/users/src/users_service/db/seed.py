@@ -45,6 +45,7 @@ ROLE_PERMISSIONS: dict[Role, list[str]] = {
     Role.ADMIN: ["*"],
     Role.SUPERVISOR: [
         "project.view",
+        "project.update",
         "report.view",
         "report.export",
         "report.configure_recipients",
@@ -78,6 +79,7 @@ PERMISSION_DESCRIPTIONS: dict[str, str] = {
     "organization.*": "All organization permissions.",
     "project.view": "View projects and their assignments (scoped to assigned projects unless global).",
     "project.create": "Create a project.",
+    "project.update": "Edit a project's settings (name, status, data source, field mapping, customer fields).",
     "project.assign": "Assign or unassign a user to/from a project.",
     "report.view": "View the reporting dashboard and call details for permitted projects.",
     "report.export": "Export the call list/dashboard as CSV for permitted projects.",
