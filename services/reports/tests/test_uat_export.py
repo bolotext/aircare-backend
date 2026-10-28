@@ -105,5 +105,5 @@ async def test_ratings_default_on_every_row_and_header_block_is_filled(app, clie
         assert [sheet.cell(row, c).value for c in (7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19)] == [
             "Pass", "Pass", "Pass", "Pass", "Pass", "Pass", "Pass", "Pass", "Pass", "N/A", "N/A", "Human-like"
         ]
-    assert [sheet[f"F{r}"].value for r in (5, 6, 7)] == ["Bot A", "hi-IN", "Narendra"]
-    assert sheet["F8"].value
+    assert [sheet[f"G{r}"].value for r in (5, 6, 7)] == ["Bot A", "hi-IN", "Narendra"]
+    assert sheet["G8"].value

@@ -35,7 +35,7 @@ _COL_SL_NO, _COL_LANGUAGE, _COL_STAGE, _COL_SCENARIO, _COL_SENDER, _COL_COMMENTS
 _DEFAULT_RATINGS = {**{c: "Pass" for c in "GHIKLMNOP"}, "Q": "N/A", "R": "N/A", "S": "Human-like"}
 # Values for the header block's "Agent Name:" / "Language:" / "Tested By:" /
 # "Test Date:" labels (column E, rows 5-8).
-_INFO_VALUE_COL = "F"
+_INFO_VALUE_COL = "G"  # one column skipped after the label in E
 _INFO_ROWS = {"agent_name": 5, "language": 6, "tested_by": 7, "test_date": 8}
 # Column J (Overall Call Score) is a formula and must never be cleared.
 _CLEARABLE = "ABCDEFGHIKLMNOPQRST"
