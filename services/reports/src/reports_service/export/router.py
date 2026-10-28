@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Body, Depends, Query, Response
 from pydantic import BaseModel, Field
@@ -108,6 +108,10 @@ class UatReportRequest(BaseModel):
         max_length=MAX_CALLS,
         description="Optional tester-entered Scenarios text per conversation_id (max 500 characters each).",
     )
+    agent_name: str | None = Field(default=None, max_length=200, description="Header block: Agent Name.")
+    language: str | None = Field(default=None, max_length=100, description="Header block: Language (defaults to the first call's).")
+    tested_by: str | None = Field(default=None, max_length=200, description="Header block: Tested By (defaults to Narendra).")
+    test_date: str | None = Field(default=None, max_length=50, description="Header block: Test Date (defaults to today, IST).")
     conversation_ids: list[str] = Field(
         min_length=1, max_length=MAX_CALLS, description=f"The selected calls, one template row each (max {MAX_CALLS})."
     )
@@ -149,8 +153,14 @@ async def export_uat_xlsx(
         raise NotFoundError("None of the selected calls were found")
     # Scenarios live on the report documents themselves.
     stored = {c.conversation_id: s for c in calls if (s := scenario_from_report(c))}
+    info = {
+        "agent_name": body.agent_name,
+        "language": body.language or calls[0].language,
+        "tested_by": body.tested_by or "Narendra",
+        "test_date": body.test_date or datetime.now(timezone(timedelta(hours=5, minutes=30))).strftime("%d-%m-%Y"),
+    }
     return Response(
-        content=build_uat_xlsx(calls, {**stored, **{k: v[:500] for k, v in body.scenarios.items()}}),
+        content=build_uat_xlsx(calls, {**stored, **{k: v[:500] for k, v in body.scenarios.items()}}, info),
         media_type=_XLSX,
         headers={"Content-Disposition": "attachment; filename=Unit_Test_Report.xlsx"},
     )

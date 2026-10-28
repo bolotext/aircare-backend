@@ -89,3 +89,21 @@ async def test_lookup_returns_current_scenarios_in_requested_order(app, client):
     resp = await client.post("/api/v1/calls/lookup", params=params, json={"conversation_ids": ["l-2", "l-1", "missing"]})
     items = resp.json()["data"]
     assert [(i["conversation_id"], i["scenario"]) for i in items] == [("l-2", "Callback"), ("l-1", None)]
+
+
+async def test_ratings_default_on_every_row_and_header_block_is_filled(app, client):
+    for i in range(12):
+        await make_call(PROJECT, ORG, conversation_id=f"d-{i}", language="hi-IN", disposition="RESOLVED")
+    app.dependency_overrides[get_current_identity] = lambda: make_identity("ADMIN")
+    resp = await client.post(
+        "/api/v1/export.xlsx",
+        params={"project_id": str(PROJECT)},
+        json={"conversation_ids": [f"d-{i}" for i in range(12)], "agent_name": "Bot A"},
+    )
+    sheet = load_workbook(BytesIO(resp.content))["UAT Test sheet"]
+    for row in (11, 20, 22):  # row 11 example had Fails; 21+ had no template defaults
+        assert [sheet.cell(row, c).value for c in (7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19)] == [
+            "Pass", "Pass", "Pass", "Pass", "Pass", "Pass", "Pass", "Pass", "Pass", "N/A", "N/A", "Human-like"
+        ]
+    assert [sheet[f"F{r}"].value for r in (5, 6, 7)] == ["Bot A", "hi-IN", "Narendra"]
+    assert sheet["F8"].value
