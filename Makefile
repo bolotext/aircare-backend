@@ -1,4 +1,4 @@
-.PHONY: install test run run-prod seed seed-demo schedule
+.PHONY: install test run run-prod seed seed-demo schedule docker-build docker-up docker-down docker-restart
 
 # Everything is one app on :8000, configured by ./.env (see src/common/env.py).
 
@@ -25,3 +25,15 @@ seed-demo:
 schedule:
 	@echo 'Daily automailer loop (separate process; needs MongoDB + the mail relay, see .env)'
 	python src/main.py schedule
+
+docker-build:
+	docker compose build
+
+docker-up:
+	@echo 'Starting the backend on :8000 (add --profile scheduler for the automailer: docker compose --profile scheduler up -d)'
+	docker compose up -d
+
+docker-down:
+	docker compose down
+
+docker-restart: docker-down docker-build docker-up

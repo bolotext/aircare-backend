@@ -1,60 +1,32 @@
 services:
 
-  users:
+  # The whole backend (users + reports) as one app on :8000.
+  backend:
     build:
       context: .
-      dockerfile: services/users/Dockerfile
-    image: manappuram_users
-    container_name: manappuram_users
+      dockerfile: Dockerfile
+    image: manappuram_backend
+    container_name: manappuram_backend
+    # host networking so MONGO_URI=mongodb://localhost:27017 reaches a Mongo on the host.
     network_mode: host
     env_file:
-      - services/users/.env
+      - .env
+    environment:
+      # Worker process count (no --reload in this entrypoint). Defaults to 2.
+      # WEB_CONCURRENCY: "4"
+      HOST: 0.0.0.0
     restart: always
 
-  api-gateway:
-    build:
-      context: .
-      dockerfile: services/api-gateway/Dockerfile
-    image: manappuram_api_gateway
-    container_name: manappuram_api_gateway
-    network_mode: host
-    env_file:
-      - services/api-gateway/.env
-      # Worker process count (no --reload in this production entrypoint —
-      # see services/api-gateway/entrypoint.sh). Defaults to 2 if unset;
-      # override here per environment, e.g. WEB_CONCURRENCY: "4".
-      # WEB_CONCURRENCY: "2"
-    depends_on:
-      - users
-      - reports
-    restart: always
-
-  # mcp-clients:
-  #   build:
-  #     context: .
-  #     dockerfile: services/mcp_clients/Dockerfile
-  #   image: manappuram_mcp_clients
-  #   container_name: manappuram_mcp_clients
+  # Daily report-email loop — its own process, same image. Start it with:
+  #   docker compose --profile scheduler up -d
+  # scheduler:
+  #   profiles: ["scheduler"]
+  #   image: manappuram_backend
+  #   container_name: manappuram_scheduler
   #   network_mode: host
   #   env_file:
-  #     - services/mcp_clients/.env
+  #     - .env
+  #   entrypoint: ["python", "src/main.py", "schedule"]
+  #   depends_on:
+  #     - backend
   #   restart: always
-
-  reports:
-    build:
-      context: .
-      dockerfile: services/reports/Dockerfile
-    image: manappuram_reports
-    container_name: manappuram_reports
-    network_mode: host
-    env_file:
-      - services/reports/.env
-    environment:
-      USERS_SERVICE_URL: http://localhost:45462
-      # Worker process count (no --reload in this production entrypoint —
-      # see services/reports/entrypoint.sh). Defaults to 2 if unset; override
-      # here per environment, e.g. WEB_CONCURRENCY: "4".
-      # WEB_CONCURRENCY: "2"
-    depends_on:
-      - users
-    restart: always

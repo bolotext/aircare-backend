@@ -44,6 +44,9 @@ make schedule                    # the daily automailer loop — its own process
 make test                        # all tests, against mongomock-motor (no Docker/Mongo needed)
 ```
 
+Docker: `make docker-build && make docker-up` (one image, one container on :8000; config comes from `.env` at
+run time — it is never copied into the image). Add the automailer with `docker compose --profile scheduler up -d`.
+
 API docs: `http://localhost:8000/docs`. Seed commands that take ids:
 `python src/main.py seed-calls --organization-id <id> --project-id <id> ...`,
 `python src/main.py seed-patients --project-a-id <id> --project-b-id <id>`,
