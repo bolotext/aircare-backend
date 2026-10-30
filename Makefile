@@ -1,109 +1,27 @@
-.PHONY: install test test-reports seed seed-demo seed-reports-calls seed-reports-patients seed-reports-risk-thresholds seed-scheduler-demo run-users run-gateway run-reports run-mcp-clients run-reports-scheduler run-scheduler run-users-prod run-gateway-prod run-reports-prod run-mcp-clients-prod docker-build docker-up docker-down docker-restart
+.PHONY: install test run run-prod seed seed-demo schedule
+
+# Everything is one app on :8000, configured by ./.env (see src/common/env.py).
 
 install:
-	@echo 'Installing all workspace packages with uv'
-	uv sync
+	python -m pip install -r requirements-dev.txt
 
 test:
-	@echo 'Running the Users service test suite'
-	uv run --package users-service pytest services/users/tests
+	python -m pytest
 
-test-reports:
-	@echo 'Running the Reports service test suite'
-	uv run --package reports-service pytest services/reports/tests
+run:
+	@echo 'Backend on :8000 with --reload (dev only; needs a reachable MongoDB, see .env)'
+	python src/main.py serve --reload
+
+run-prod:
+	@echo 'Backend on :8000 with 2 worker processes, no reload'
+	python src/main.py serve --workers 2
 
 seed:
-	@echo 'Seeding roles and the bootstrap Admin (Users service)'
-	cd services/users && uv run python main.py seed
+	python src/main.py seed
 
 seed-demo:
-	@echo 'Seeding a demo organization, two projects, and a Supervisor/Viewer to prove project isolation (Users service)'
-	cd services/users && uv run python main.py seed-demo
+	python src/main.py seed-demo
 
-seed-reports-calls:
-	@echo 'Seeding synthetic call data for the demo projects (Reports service). Pass ids: make seed-reports-calls ORG_ID=... PROJECT_IDS="id1 id2"'
-	cd services/reports && uv run python main.py seed-calls --organization-id $(ORG_ID) $(foreach id,$(PROJECT_IDS),--project-id $(id))
-
-seed-reports-patients:
-	@echo 'Seeding the demo patient roster, split across the two demo projects (Reports service). Pass ids: make seed-reports-patients PROJECT_A_ID=... PROJECT_B_ID=...'
-	cd services/reports && uv run python main.py seed-patients --project-a-id $(PROJECT_A_ID) --project-b-id $(PROJECT_B_ID)
-
-seed-reports-risk-thresholds:
-	@echo 'Seeding the condition -> AQI risk-threshold reference table (Reports service)'
-	cd services/reports && uv run python main.py seed-risk-thresholds
-
-seed-scheduler-demo:
-	@echo 'Seeding the two demo projects, 40-patient roster, and AQI risk thresholds (Scheduler service). Idempotent, safe to re-run.'
-	cd services/scheduler && uv run python seed.py
-
-# --- Development (auto-reload on source changes; single process — never use these in production) ---
-
-run-users:
-	@echo 'Running the Users service locally on :45462 with --reload (dev only; expects a reachable MongoDB, see services/users/.env)'
-	cd services/users && uv run python main.py serve --reload
-
-run-gateway:
-	@echo 'Running the API Gateway locally on :45461 with --reload (dev only; expects the Users service reachable, see services/api-gateway/.env)'
-	cd services/api-gateway && uv run python main.py --reload
-
-run-reports:
-	@echo 'Running the Reports service locally on :45464 with --reload (dev only; expects a reachable MongoDB and the Users service, see services/reports/.env)'
-	cd services/reports && uv run python main.py serve --reload
-
-run-all:
-ifeq ($(shell uname),Darwin)
-	@osascript -e 'tell application "Terminal" to do script "cd $(PWD)/services/users && uv run python main.py serve --reload"'
-	@osascript -e 'tell application "Terminal" to do script "cd $(PWD)/services/api-gateway && uv run python main.py --reload"'
-	@osascript -e 'tell application "Terminal" to do script "cd $(PWD)/services/reports && uv run python main.py serve --reload"'
-	#@osascript -e 'tell application "Terminal" to do script "cd $(PWD)/services/mcp_clients && uv run python main.py serve --reload"'
-else
-	@gnome-terminal -- bash -c 'cd $(PWD)/services/users && uv run python main.py serve --reload; exec bash'
-	@gnome-terminal -- bash -c 'cd $(PWD)/services/api-gateway && uv run python main.py --reload; exec bash'
-	@gnome-terminal -- bash -c 'cd $(PWD)/services/reports && uv run python main.py serve --reload; exec bash'
-	#@gnome-terminal -- bash -c 'cd $(PWD)/services/mcp_clients && uv run python main.py serve --reload; exec bash'
-endif
-
-run-mcp-clients:
-	@echo 'Running the MCP Clients service locally on :45463 with --reload (dev only; expects a reachable Mongo MCP server and Redis MCP server, see services/mcp_clients/.env)'
-	cd services/mcp_clients && uv run python main.py serve --reload
-
-run-reports-scheduler:
-	@echo 'Running the Reports service automailer scheduler loop (expects a reachable MongoDB and SMTP server, see services/reports/.env)'
-	cd services/reports && uv run python main.py schedule
-
-run-scheduler:
-	@echo 'Running the AQI outbound advisory scheduler loop (expects a reachable MongoDB, see services/scheduler/.env)'
-	cd services/scheduler && uv run python aqi_outbound_scheduler.py
-
-# --- Production-style (no reload, multiple worker processes; for docker-compose this is what
-# services/*/entrypoint.sh already runs — see WEB_CONCURRENCY there) ---
-
-run-users-prod:
-	@echo 'Running the Users service on :45462 with 2 worker processes, no reload (production-style)'
-	cd services/users && uv run python main.py serve --workers 2
-
-run-gateway-prod:
-	@echo 'Running the API Gateway on :45461 with 2 worker processes, no reload (production-style)'
-	cd services/api-gateway && uv run python main.py --workers 2
-
-run-reports-prod:
-	@echo 'Running the Reports service on :45464 with 2 worker processes, no reload (production-style)'
-	cd services/reports && uv run python main.py serve --workers 2
-
-run-mcp-clients-prod:
-	@echo 'Running the MCP Clients service on :45463 with 2 worker processes, no reload (production-style)'
-	cd services/mcp_clients && uv run python main.py serve --workers 2
-
-docker-build:
-	@echo 'Building all service images'
-	docker compose build
-
-docker-up:
-	@echo 'Starting mongo + all services'
-	docker compose up -d
-
-docker-down:
-	@echo 'Stopping all services'
-	docker compose down
-
-docker-restart: docker-down docker-build docker-up
+schedule:
+	@echo 'Daily automailer loop (separate process; needs MongoDB + the mail relay, see .env)'
+	python src/main.py schedule
