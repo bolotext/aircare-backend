@@ -86,6 +86,7 @@ PERMISSION_DESCRIPTIONS: dict[str, str] = {
     "report.configure_recipients": "Configure automailer test recipients for permitted projects.",
     "report.trigger_manual": "Trigger a manual automailer run for permitted projects.",
     "report.annotate": "Edit tester Scenarios text on calls for permitted projects.",
+    "report.import": "Import a call record from prod into a stage database (Admin only; copies personal data).",
     "patient.view": "View a project's patient roster (scoped to assigned projects unless global).",
     "patient.create": "Add a patient to a project's roster.",
     "patient.update": "Update a patient record.",

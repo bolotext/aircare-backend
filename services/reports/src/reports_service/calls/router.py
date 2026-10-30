@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from common.errors import BadGatewayError, NotFoundError
+from common.errors import BadGatewayError, NotFoundError, UnprocessableEntityError
 from common.openapi import FORBIDDEN_EXAMPLE, UNAUTHORIZED_EXAMPLE, not_found_example, success_and_error_responses
 from common.responses import success_response
 from common.schemas import SuccessResponse
@@ -12,10 +12,19 @@ from reports_service.calls.model import Call
 from reports_service.calls.recording import fetch_recording_audio, resolve_recording_ref
 from reports_service.calls.repository import CallFilter, day_range_bounds
 from reports_service.calls.mapped_fields import extract_fields, mapped_columns, source_document
-from reports_service.calls.schema import CallDetail, CallListItem, PaginatedCalls
+from reports_service.calls.journey import load_journey
+from reports_service.calls.prod_import import (
+    COLLECTION_NAME_PATTERN,
+    CONVERSATION_ID_PATTERN,
+    DB_NAME_PATTERN,
+    FLOW_ID_PATTERN,
+    import_from_prod,
+)
+from reports_service.calls.schema import CallDetail, CallJourney, CallListItem, PaginatedCalls, ProdImportResult
 from reports_service.core.config import get_settings
 from reports_service.core.deps import ProjectCallSource, ensure_project_access, require_permission, resolve_project_source
 from reports_service.core.users_client import IdentityContext
+from reports_service.db.mongodb import get_client
 
 router = APIRouter(prefix="/calls", tags=["calls"])
 
@@ -145,6 +154,46 @@ async def list_calls(
             total=total,
         )
     )
+
+
+class ProdImportBody(BaseModel):
+    conversation_id: str = Field(pattern=CONVERSATION_ID_PATTERN, description="The prod conversation id to fetch.")
+    flow_id: str = Field(pattern=FLOW_ID_PATTERN, description="Sent as the `flow_id` header to the prod API.", examples=["prod-e3fbb647899d"])
+    db_name: str = Field(pattern=DB_NAME_PATTERN, description="The stage database to save into.")
+    collection_name: str = Field(default="call_logs", pattern=COLLECTION_NAME_PATTERN, description="Collection inside `db_name`.")
+    confirm_pii: bool = Field(description="Must be true: the caller confirms this personal data may be copied to the stage database.")
+
+
+@router.post(
+    "/import-from-prod",
+    response_model=SuccessResponse[ProdImportResult],
+    summary="Import one call record from prod into a stage database",
+    description="""Fetches one call's record from the prod conversation API and, **only if it answers HTTP 200
+with data**, upserts it into `db_name.collection_name` (re-importing the same conversation replaces the earlier
+copy). The saved document gets an `_import_meta` block (source, flow_id, imported_at, imported_by).
+
+**Privacy:** the record contains personal data. Admin only (`report.import`), requires `confirm_pii: true`,
+is audit-logged, and the record is never returned — only where it was written.
+
+**Errors:** 403 without `report.import`; 422 for a bad/reserved database name or an empty prod answer;
+502 if the prod API is unreachable, not configured, or answers non-200 (nothing is saved).""",
+    responses=success_and_error_responses("Saved", {}, UNAUTHORIZED_EXAMPLE, FORBIDDEN_EXAMPLE),
+)
+async def import_call_from_prod(
+    body: ProdImportBody = Body(...),
+    identity: IdentityContext = Depends(require_permission("report.import")),
+) -> dict:
+    if not body.confirm_pii:
+        raise UnprocessableEntityError("confirm_pii must be true to copy personal data to the stage database")
+    result = await import_from_prod(
+        get_client(),
+        conversation_id=body.conversation_id,
+        flow_id=body.flow_id,
+        db_name=body.db_name,
+        collection_name=body.collection_name,
+        user_id=identity.user_id,
+    )
+    return success_response(message="Imported from prod", data=ProdImportResult(**result))
 
 
 @router.get(
@@ -287,6 +336,54 @@ async def set_call_scenario(
     text = body.scenario.strip()
     await _write_scenario_to_report(source.collection, call, text, identity.user_id)
     return success_response(message="Scenario saved", data=ScenarioBody(scenario=text))
+
+
+@router.get(
+    "/{conversation_id}/journey",
+    response_model=SuccessResponse[CallJourney],
+    summary="Get the full call journey for this call's customer (dev logs)",
+    description="""Finds every call placed to the same phone number as this call and returns them oldest-first,
+each with the retry-scheduler state it recorded (`sequence_number`, `trigger_call`, `next_trigger_date`,
+`call_sequence_mapping`, ...) and a list of detected inconsistencies (duplicate `sequence_number`, a call
+placed before the previous call's `next_trigger_date`, a call after `trigger_call=false`, a
+`call_sequence_mapping` count that disagrees with the logs, ...).
+
+**Privacy:** the phone number is used only server-side to link calls and is never returned — only a masked
+last-4 hint. Personal-data fields are excluded from every entry.
+
+**Errors:** 403 without `report.view`/project access; 404 if the call isn't in the project. If the call's
+source record has no phone number the response is 200 with `available: false` and a `reason`.""",
+    responses=success_and_error_responses("The customer's call journey", {}, UNAUTHORIZED_EXAMPLE, FORBIDDEN_EXAMPLE, not_found_example("Call")),
+)
+async def get_call_journey(
+    conversation_id: str = Path(..., description="Any call in the journey.", examples=["1789455660779658485"]),
+    project_id: str = Query(..., description="The project (Mongo ObjectId) this call belongs to."),
+    identity: IdentityContext = Depends(require_permission("report.view")),
+    source: ProjectCallSource = Depends(resolve_project_source),
+) -> dict:
+    ensure_project_access(identity, project_id)
+    if source.adapter is not None:
+        found = await call_repo.get_with_raw_source_by_conversation_id(
+            conversation_id,
+            project_id,
+            collection=source.collection,
+            adapter=source.adapter,
+            organization_id=source.organization_id,
+        )
+        source_doc = found[1] if found else None
+    else:
+        call = await call_repo.get_by_conversation_id(conversation_id, project_id, collection=source.collection)
+        source_doc = call._source_doc if call else None
+    if source_doc is None:
+        raise NotFoundError("Call not found")
+    journey = await load_journey(
+        source.collection,
+        source_doc,
+        adapter=source.adapter,
+        project_id=project_id,
+        organization_id=source.organization_id,
+    )
+    return success_response(data=CallJourney(**journey))
 
 
 @router.get(

@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     audio_server_url: str = ""
     audio_server_timeout_seconds: float = 15.0
 
+    # Prod conversation API the "Import from Prod" tab reads one call record
+    # from (see calls/prod_import.py). Without it, the import route returns 502.
+    prod_import_url: str = ""
+    prod_import_timeout_seconds: float = 20.0
+
     # Daily send time, Asia/Kolkata hour-of-day (0-23).
     report_send_hour_ist: int = 6
     # How often the scheduler loop wakes up to check whether it's time to

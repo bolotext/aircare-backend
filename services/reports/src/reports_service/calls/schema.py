@@ -99,3 +99,25 @@ class PaginatedCalls(BaseModel):
     page: int = Field(description="The page number this response corresponds to (1-indexed).")
     page_size: int = Field(description="Number of items per page that was actually applied (see the `page_size` query parameter's cap).")
     total: int = Field(description="Total number of calls matching the applied filters, across all pages.")
+
+
+class CallJourney(BaseModel):
+    """Every call to the same customer (matched by phone number, server-side only — the number is never
+    returned) in time order, with the retry-scheduler state each call recorded and any detected
+    inconsistencies. See `calls/journey.py`."""
+
+    available: bool = Field(description="False when the call's source record has no phone number to link on.")
+    reason: str | None = Field(default=None, description="Why `available` is false.")
+    phone_masked: str | None = Field(default=None, description="Masked last-4 hint of the customer's number.")
+    summary: dict = Field(description="Totals, next scheduled trigger, and the merged per-day call_sequence_mapping.")
+    entries: list[dict] = Field(description="One item per call, oldest first; each carries an `issues` list.")
+
+
+class ProdImportResult(BaseModel):
+    """Where an imported prod record was written. The record itself is personal data and is never echoed."""
+
+    db_name: str
+    collection_name: str
+    created: bool = Field(description="True if a new document was inserted, false if an earlier import of the same call was replaced.")
+    document_id: str | None = None
+    top_level_keys: list[str] = Field(description="Top-level keys of the saved record, so the caller can sanity-check its shape.")
