@@ -20,6 +20,9 @@ class Project(Document):
     report_collection_name: str
     # Optional collection (in report_db_name) holding customer details.
     customer_details_collection_name: str | None = None
+    # The prod bot's flow_id (e.g. "prod-xxxxxxxxxxxx"): sent as the `flow_id` header when importing a
+    # call from prod into this project's report collection (see reports_service.calls.prod_import).
+    flow_id: str | None = None
     status: ProjectStatus = ProjectStatus.ACTIVE
     # Schema of one customer-details record: [{"key": "city", "type": "text"}, ...].
     # Types are Mongo $type aliases: string|int|long|double|decimal|bool|date|objectId|array|object. See projects.schema.CustomerFieldSpec.

@@ -223,6 +223,17 @@ async def test_admin_edits_data_source_and_customer_details_collection(client):
     assert updated["report_db_name"] == "aircare"
     assert updated["customer_details_collection_name"] is None
 
+    set_flow = await client.patch(
+        f"/api/v1/projects/{project['id']}", headers=auth_header(admin), json={"flow_id": "prod-abc123"}
+    )
+    assert data(set_flow)["flow_id"] == "prod-abc123"
+    bad_flow = await client.patch(
+        f"/api/v1/projects/{project['id']}", headers=auth_header(admin), json={"flow_id": "bad value\r\nX: y"}
+    )
+    assert code(bad_flow) == 422
+    cleared = await client.patch(f"/api/v1/projects/{project['id']}", headers=auth_header(admin), json={"flow_id": ""})
+    assert data(cleared)["flow_id"] is None
+
 
 async def test_customer_details_field_schema_validation(client):
     org = await make_org("Org CF", "org-cf")
@@ -331,4 +342,5 @@ async def test_supervisor_edits_mapping_and_customer_fields_but_not_data_source(
     )
     assert code(ok) == 200
     assert code(await client.patch(url, headers=auth_header(sup), json={"report_db_name": "x"})) == 403
+    assert code(await client.patch(url, headers=auth_header(sup), json={"flow_id": "prod-x"})) == 403
     assert code(await client.patch(f"/api/v1/projects/{other.id}", headers=auth_header(sup), json={"name": "n"})) == 403

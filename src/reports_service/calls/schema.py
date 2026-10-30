@@ -114,10 +114,14 @@ class CallJourney(BaseModel):
 
 
 class ProdImportResult(BaseModel):
-    """Where an imported prod record was written. The record itself is personal data and is never echoed."""
+    """Where imported prod data was written. The records themselves are personal data and are never echoed."""
 
     db_name: str
     collection_name: str
-    created: bool = Field(description="True if a new document was inserted, false if an earlier import of the same call was replaced.")
-    document_id: str | None = None
-    top_level_keys: list[str] = Field(description="Top-level keys of the saved record, so the caller can sanity-check its shape.")
+    calls_found: int
+    calls_created: int = Field(description="New call documents inserted.")
+    calls_replaced: int = Field(description="Earlier imports of the same conversation that were replaced.")
+    calls_skipped: int = Field(description="Records without a conversation_id/call_uid, not saved.")
+    customer_collection_name: str | None = Field(default=None, description="Null if the project has no customer-details collection.")
+    customer_saved: bool | None = Field(default=None, description="Null when no customer-details collection is configured.")
+    customer_error: str | None = Field(default=None, description="Why the customer record wasn't saved (calls are still saved).")

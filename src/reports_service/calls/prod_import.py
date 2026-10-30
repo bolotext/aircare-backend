@@ -1,5 +1,8 @@
-"""Copies one call's raw record from the prod conversation API into a
-caller-chosen stage Mongo database ("Import from Prod" tab).
+"""Copies a customer's prod data, looked up by phone number, into a project's
+own databases: every call record (prod report API) goes to the report
+collection and the customer record (prod customer API) goes to the project's
+customer-details collection. The Flow ID comes from the project's Data Source
+settings.
 
 The prod record is personal data (names, phone numbers, transcript). This
 runs only for callers holding `report.import` (Admin only — see
@@ -24,9 +27,9 @@ logger = logging.getLogger(__name__)
 # Mongo's own bookkeeping databases must never be a write target.
 RESERVED_DB_NAMES = {"admin", "local", "config"}
 DB_NAME_PATTERN = r"^[A-Za-z0-9_-]{1,38}$"
-COLLECTION_NAME_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
-FLOW_ID_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
-CONVERSATION_ID_PATTERN = r"^[0-9]{6,40}$"
+REPORT_PATH = "/mongo_test_report"
+CUSTOMER_PATH = "/mongo_test_customer"
+PHONE_NUMBER_PATTERN = r"^[0-9]{6,15}$"
 
 
 def validate_db_name(db_name: str) -> None:
@@ -36,74 +39,121 @@ def validate_db_name(db_name: str) -> None:
         raise UnprocessableEntityError("Database name may only contain letters, digits, '_' and '-'")
 
 
-async def fetch_prod_record(conversation_id: str, flow_id: str) -> dict[str, Any]:
+async def _fetch(path: str, phone_number: str, flow_id: str, what: str) -> Any:
     settings = get_settings()
-    if not settings.prod_import_url:
-        raise BadGatewayError("Prod import is not configured")
+    if not settings.prod_import_base_url:
+        raise BadGatewayError(f"Prod {what} import is not configured")
+    url = settings.prod_import_base_url.rstrip("/") + path
     try:
         async with httpx.AsyncClient(timeout=settings.prod_import_timeout_seconds) as client:
             response = await client.get(
-                settings.prod_import_url,
-                params={"q1": conversation_id},
+                url,
+                params={"number": phone_number},
                 headers={"accept": "*/*", "flow_id": flow_id},
             )
     except httpx.HTTPError as exc:
-        raise BadGatewayError("Unable to reach the prod conversation API") from exc
+        raise BadGatewayError(f"Unable to reach the prod {what} API") from exc
 
     if response.status_code != 200:
-        raise BadGatewayError(f"Prod conversation API returned HTTP {response.status_code}; nothing was saved")
+        raise BadGatewayError(f"Prod {what} API returned HTTP {response.status_code}; nothing was saved")
     try:
-        payload = response.json()
+        return response.json()
     except ValueError as exc:
-        raise BadGatewayError("Prod conversation API returned a non-JSON response; nothing was saved") from exc
-    if not payload:
-        raise UnprocessableEntityError("Prod conversation API returned no data for this conversation id")
-    return payload if isinstance(payload, dict) else {"data": payload}
+        raise BadGatewayError(f"Prod {what} API returned a non-JSON response; nothing was saved") from exc
+
+
+async def fetch_prod_calls(phone_number: str, flow_id: str) -> list[dict[str, Any]]:
+    payload = await _fetch(REPORT_PATH, phone_number, flow_id, "report")
+    records = payload.get("records") if isinstance(payload, dict) else payload
+    records = [r for r in (records or []) if isinstance(r, dict)]
+    if not records:
+        raise UnprocessableEntityError("Prod report API returned no calls for this phone number")
+    return records
+
+
+async def fetch_prod_customer(phone_number: str, flow_id: str) -> dict[str, Any]:
+    payload = await _fetch(CUSTOMER_PATH, phone_number, flow_id, "customer")
+    if not isinstance(payload, dict) or not payload:
+        raise UnprocessableEntityError("Prod customer API returned no data for this phone number")
+    return payload
+
+
+def _meta(flow_id: str, user_id: str, **extra: Any) -> dict[str, Any]:
+    return {
+        **extra,
+        "flow_id": flow_id,
+        "source": "prod",
+        "imported_at": datetime.now(timezone.utc),
+        "imported_by": user_id,
+    }
 
 
 async def import_from_prod(
     client: AsyncIOMotorClient,
     *,
-    conversation_id: str,
+    phone_number: str,
     flow_id: str,
     db_name: str,
     collection_name: str,
+    customer_collection_name: str | None,
     user_id: str,
 ) -> dict:
-    """Fetches the record and upserts it into `db_name.collection_name`,
-    keyed on `_import_meta.conversation_id` so re-importing the same call
-    replaces the earlier copy instead of duplicating it. Nothing is written
-    unless the prod API answered 200 with data."""
+    """Fetches the customer's calls and customer record, then upserts them.
+    Calls are keyed on `_import_meta.conversation_id`, the customer record on
+    `_import_meta.phone_number` + flow_id, so re-importing replaces earlier
+    copies instead of duplicating. The calls must come back 200 with data or
+    nothing is written; the customer record is saved only when the project has
+    a customer-details collection and its API answered 200."""
 
     validate_db_name(db_name)
-    record = await fetch_prod_record(conversation_id, flow_id)
+    calls = await fetch_prod_calls(phone_number, flow_id)
 
-    document = {
-        **record,
-        "_import_meta": {
-            "conversation_id": conversation_id,
-            "flow_id": flow_id,
-            "source": "prod",
-            "imported_at": datetime.now(timezone.utc),
-            "imported_by": user_id,
-        },
-    }
-    collection = client[db_name][collection_name]
-    result = await collection.replace_one({"_import_meta.conversation_id": conversation_id}, document, upsert=True)
+    customer: dict[str, Any] | None = None
+    customer_error: str | None = None
+    if customer_collection_name:
+        try:
+            customer = await fetch_prod_customer(phone_number, flow_id)
+        except (BadGatewayError, UnprocessableEntityError) as exc:
+            customer_error = str(exc)
 
-    created = result.upserted_id is not None
+    db = client[db_name]
+    created = replaced = skipped = 0
+    for record in calls:
+        conversation_id = str(record.get("conversation_id") or record.get("call_uid") or "")
+        if not conversation_id:
+            skipped += 1
+            continue
+        document = {**record, "_import_meta": _meta(flow_id, user_id, conversation_id=conversation_id)}
+        result = await db[collection_name].replace_one(
+            {"_import_meta.conversation_id": conversation_id}, document, upsert=True
+        )
+        if result.upserted_id is not None:
+            created += 1
+        else:
+            replaced += 1
+
+    customer_saved: bool | None = None  # None = not attempted (no collection configured)
+    if customer_collection_name:
+        customer_saved = customer is not None
+        if customer is not None:
+            await db[customer_collection_name].replace_one(
+                {"_import_meta.phone_number": phone_number, "_import_meta.flow_id": flow_id},
+                {**customer, "_import_meta": _meta(flow_id, user_id, phone_number=phone_number)},
+                upsert=True,
+            )
+
     logger.info(
-        "prod import: user=%s conversation_id=%s -> %s.%s (%s)",
-        user_id,
-        conversation_id,
-        db_name,
-        collection_name,
-        "created" if created else "replaced",
+        "prod import: user=%s calls created=%d replaced=%d skipped=%d customer=%s -> %s.%s",
+        user_id, created, replaced, skipped, customer_saved, db_name, collection_name,
     )
     return {
         "db_name": db_name,
         "collection_name": collection_name,
-        "created": created,
-        "document_id": str(result.upserted_id) if created else None,
-        "top_level_keys": sorted(record.keys()),
+        "calls_found": len(calls),
+        "calls_created": created,
+        "calls_replaced": replaced,
+        "calls_skipped": skipped,
+        "customer_collection_name": customer_collection_name,
+        "customer_saved": customer_saved,
+        "customer_error": customer_error,
     }

@@ -38,9 +38,10 @@ class Settings(BaseSettings):
     audio_server_url: str = ""
     audio_server_timeout_seconds: float = 15.0
 
-    # Prod conversation API the "Import from Prod" tab reads one call record
-    # from (see calls/prod_import.py). Without it, the import route returns 502.
-    prod_import_url: str = ""
+    # Base URL of the prod API "Import data" reads from, looked up by phone
+    # number (see calls/prod_import.py, which appends /mongo_test_report and
+    # /mongo_test_customer). Without it, the import route returns 502.
+    prod_import_base_url: str = ""
     prod_import_timeout_seconds: float = 20.0
 
     # Daily send time, Asia/Kolkata hour-of-day (0-23).

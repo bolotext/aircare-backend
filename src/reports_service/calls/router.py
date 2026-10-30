@@ -4,7 +4,7 @@ from common.errors import BadGatewayError, NotFoundError, UnprocessableEntityErr
 from common.openapi import FORBIDDEN_EXAMPLE, UNAUTHORIZED_EXAMPLE, not_found_example, success_and_error_responses
 from common.responses import success_response
 from common.schemas import SuccessResponse
-from fastapi import APIRouter, Body, Depends, Path, Query, Response
+from fastapi import APIRouter, Body, Depends, Path, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from reports_service.calls import repository as call_repo
@@ -13,17 +13,11 @@ from reports_service.calls.recording import fetch_recording_audio, resolve_recor
 from reports_service.calls.repository import CallFilter, day_range_bounds
 from reports_service.calls.mapped_fields import extract_fields, mapped_columns, source_document
 from reports_service.calls.journey import load_journey
-from reports_service.calls.prod_import import (
-    COLLECTION_NAME_PATTERN,
-    CONVERSATION_ID_PATTERN,
-    DB_NAME_PATTERN,
-    FLOW_ID_PATTERN,
-    import_from_prod,
-)
+from reports_service.calls.prod_import import PHONE_NUMBER_PATTERN, import_from_prod
 from reports_service.calls.schema import CallDetail, CallJourney, CallListItem, PaginatedCalls, ProdImportResult
 from reports_service.core.config import get_settings
 from reports_service.core.deps import ProjectCallSource, ensure_project_access, require_permission, resolve_project_source
-from reports_service.core.users_client import IdentityContext
+from reports_service.core.users_client import IdentityContext, get_project_config
 from reports_service.db.mongodb import get_client
 
 router = APIRouter(prefix="/calls", tags=["calls"])
@@ -107,7 +101,7 @@ async def list_calls(
     ),
     call_status: str | None = Query(default=None, description="Exact-match call status filter, e.g. `ANSWERED`.", examples=["ANSWERED"]),
     search: str | None = Query(
-        default=None, max_length=100, description="Case-insensitive substring match on conversation_id.", examples=["17930"]
+        default=None, max_length=100, description="Case-insensitive substring match on conversation_id or flow_id.", examples=["17930", "prod-e3fbb647899d"]
     ),
     page: int = Query(default=1, ge=1, description="1-indexed page number to return."),
     page_size: int | None = Query(
@@ -157,40 +151,47 @@ async def list_calls(
 
 
 class ProdImportBody(BaseModel):
-    conversation_id: str = Field(pattern=CONVERSATION_ID_PATTERN, description="The prod conversation id to fetch.")
-    flow_id: str = Field(pattern=FLOW_ID_PATTERN, description="Sent as the `flow_id` header to the prod API.", examples=["prod-e3fbb647899d"])
-    db_name: str = Field(pattern=DB_NAME_PATTERN, description="The stage database to save into.")
-    collection_name: str = Field(default="call_logs", pattern=COLLECTION_NAME_PATTERN, description="Collection inside `db_name`.")
+    project_id: str = Field(description="The project whose report collection the record is saved into and whose Flow ID is used.")
+    phone_number: str = Field(pattern=PHONE_NUMBER_PATTERN, description="Customer phone number (digits only) to fetch prod calls and customer details for.")
     confirm_pii: bool = Field(description="Must be true: the caller confirms this personal data may be copied to the stage database.")
 
 
 @router.post(
     "/import-from-prod",
     response_model=SuccessResponse[ProdImportResult],
-    summary="Import one call record from prod into a stage database",
-    description="""Fetches one call's record from the prod conversation API and, **only if it answers HTTP 200
-with data**, upserts it into `db_name.collection_name` (re-importing the same conversation replaces the earlier
-copy). The saved document gets an `_import_meta` block (source, flow_id, imported_at, imported_by).
+    summary="Import a customer's prod calls and details (by phone number) into a project",
+    description="""Looks the customer up by **phone number** on the prod report API — using the project's **Flow ID**
+(Settings → Data Source) as the `flow_id` header — and, **only if it answers HTTP 200 with calls**, upserts every
+call into the project's report database/collection (re-importing replaces earlier copies, keyed on conversation id).
+If the project has a customer-details collection, the prod customer API is fetched too and saved there (keyed on
+phone number + flow_id); a failure of that second call doesn't undo the saved calls and is reported in `customer_error`.
+Saved documents get an `_import_meta` block (source, flow_id, imported_at, imported_by).
 
-**Privacy:** the record contains personal data. Admin only (`report.import`), requires `confirm_pii: true`,
-is audit-logged, and the record is never returned — only where it was written.
+**Privacy:** the data is personal. Admin only (`report.import`), requires `confirm_pii: true`, is audit-logged
+(without the phone number), and the records are never returned — only where they were written and counts.
 
-**Errors:** 403 without `report.import`; 422 for a bad/reserved database name or an empty prod answer;
-502 if the prod API is unreachable, not configured, or answers non-200 (nothing is saved).""",
+**Errors:** 403 without `report.import`; 404 if the project doesn't exist; 422 if the project has no Flow ID
+set, or for a reserved database name or no calls found; 502 if the prod API is unreachable, not configured, or answers non-200 (nothing is saved).""",
     responses=success_and_error_responses("Saved", {}, UNAUTHORIZED_EXAMPLE, FORBIDDEN_EXAMPLE),
 )
 async def import_call_from_prod(
+    request: Request,
     body: ProdImportBody = Body(...),
     identity: IdentityContext = Depends(require_permission("report.import")),
 ) -> dict:
     if not body.confirm_pii:
-        raise UnprocessableEntityError("confirm_pii must be true to copy personal data to the stage database")
+        raise UnprocessableEntityError("confirm_pii must be true to copy personal data into the report collection")
+    ensure_project_access(identity, body.project_id)
+    config = await get_project_config(request.app.state.users_http_client, body.project_id)
+    if not config.flow_id:
+        raise UnprocessableEntityError("This project has no Flow ID — set it in Settings → Data Source first")
     result = await import_from_prod(
         get_client(),
-        conversation_id=body.conversation_id,
-        flow_id=body.flow_id,
-        db_name=body.db_name,
-        collection_name=body.collection_name,
+        phone_number=body.phone_number,
+        flow_id=config.flow_id,
+        db_name=config.report_db_name,
+        collection_name=config.report_collection_name,
+        customer_collection_name=config.customer_details_collection_name,
         user_id=identity.user_id,
     )
     return success_response(message="Imported from prod", data=ProdImportResult(**result))

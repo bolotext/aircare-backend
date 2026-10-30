@@ -116,6 +116,12 @@ class ProjectUpdate(BaseModel):
     customer_details_collection_name: str | None = Field(
         default=None, max_length=100, description="New customer-details collection; empty string clears it. Omit to leave unchanged."
     )
+    flow_id: str | None = Field(
+        default=None,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_-]*$",
+        description="The prod bot's flow_id used by Import from Prod; empty string clears it. Omit to leave unchanged.",
+    )
     customer_details_fields: list[CustomerFieldSpec] | None = Field(
         default=None,
         max_length=100,
@@ -155,6 +161,7 @@ class ProjectOut(BaseModel):
     report_db_name: str = Field(description="Mongo database this project's call data is read from.")
     report_collection_name: str = Field(description="Mongo collection (within `report_db_name`) this project's call data is read from.")
     customer_details_collection_name: str | None = Field(default=None, description="Collection holding customer details, if configured.")
+    flow_id: str | None = Field(default=None, description="The prod bot's flow_id used by Import from Prod, if configured.")
     status: ProjectStatus = Field(description='`"active"` or `"archived"`.')
     customer_details_fields: list[CustomerFieldSpec] = Field(default_factory=list, description="Key + value type of each customer-details field.")
     field_mapping: dict[str, str] = Field(default_factory=dict, description="Canonical field name -> raw field name in the report collection.")

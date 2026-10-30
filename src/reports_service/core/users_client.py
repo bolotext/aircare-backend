@@ -62,6 +62,7 @@ class ProjectConfig:
     report_collection_name: str
     field_mapping: dict[str, str] = field(default_factory=dict)
     customer_details_collection_name: str | None = None
+    flow_id: str | None = None
     customer_details_fields: list[dict[str, str]] = field(default_factory=list)
 
 
@@ -97,5 +98,6 @@ async def get_project_config(client: httpx.AsyncClient, project_id: str) -> Proj
         report_collection_name=data["report_collection_name"],
         field_mapping=data.get("field_mapping") or {},
         customer_details_collection_name=data.get("customer_details_collection_name"),
+        flow_id=data.get("flow_id"),
         customer_details_fields=data.get("customer_details_fields") or [],
     )

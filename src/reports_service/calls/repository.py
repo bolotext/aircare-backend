@@ -26,7 +26,7 @@ class CallFilter:
     language: str | None = None
     disposition: str | None = None
     call_status: str | None = None
-    # Case-insensitive substring match on conversation_id.
+    # Case-insensitive substring match on conversation_id or flow_id.
     search: str | None = None
 
 
@@ -67,7 +67,8 @@ def build_mongo_query(call_filter: CallFilter) -> dict:
     if call_filter.call_status:
         query["call_status"] = call_filter.call_status
     if call_filter.search:
-        query["conversation_id"] = {"$regex": re.escape(call_filter.search), "$options": "i"}
+        pattern = {"$regex": re.escape(call_filter.search), "$options": "i"}
+        query["$or"] = [{"conversation_id": pattern}, {"flow_id": pattern}, {"bot_id": pattern}]
     return query
 
 
@@ -122,8 +123,12 @@ def matches_filter(call: Call, call_filter: CallFilter) -> bool:
         return False
     if call_filter.call_status and call.call_status != call_filter.call_status:
         return False
-    if call_filter.search and call_filter.search.lower() not in call.conversation_id.lower():
-        return False
+    if call_filter.search:
+        needle = call_filter.search.lower()
+        flow_id = (call._source_doc or {}).get("flow_id")
+        haystacks = (call.conversation_id, call.bot_id, flow_id if isinstance(flow_id, str) else "")
+        if not any(needle in h.lower() for h in haystacks):
+            return False
     return True
 
 

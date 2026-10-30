@@ -231,6 +231,7 @@ class InternalProjectConfig(BaseModel):
     report_db_name: str = Field(description="Mongo database name this project's report data is stored in.", examples=["aircare"])
     report_collection_name: str = Field(description="Mongo collection name (within `report_db_name`) this project's report data is stored in.", examples=["calls"])
     customer_details_collection_name: str | None = Field(default=None, description="Collection (in `report_db_name`) holding customer details, if configured.")
+    flow_id: str | None = Field(default=None, description="The prod bot's flow_id used by Import from Prod, if configured.")
     customer_details_fields: list[dict] = Field(default_factory=list, description="Key + value type of each customer-details field.")
     field_mapping: dict[str, str] = Field(default_factory=dict, description="Canonical field name -> raw field name; drives the Conversation Logs columns.")
 
@@ -277,6 +278,7 @@ async def get_project_config(
             report_db_name=project.report_db_name,
             report_collection_name=project.report_collection_name,
             customer_details_collection_name=project.customer_details_collection_name,
+            flow_id=project.flow_id,
             customer_details_fields=project.customer_details_fields,
             field_mapping=project.field_mapping,
         )

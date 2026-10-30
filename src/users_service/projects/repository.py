@@ -58,6 +58,7 @@ async def update_project(
     report_collection_name: str | None = None,
     customer_details_collection_name: str | None = None,
     customer_details_fields: list[dict] | None = None,
+    flow_id: str | None = None,
 ) -> Project:
     if name is not None:
         project.name = name
@@ -74,6 +75,8 @@ async def update_project(
     if customer_details_collection_name is not None:
         # An empty string clears the optional collection.
         project.customer_details_collection_name = customer_details_collection_name or None
+    if flow_id is not None:
+        project.flow_id = flow_id or None
     project.updated_at = datetime.now(timezone.utc)
     await project.save()
     return project

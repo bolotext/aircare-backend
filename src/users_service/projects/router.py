@@ -32,6 +32,7 @@ def _to_out(project: Project) -> ProjectOut:
         report_collection_name=project.report_collection_name,
         status=project.status,
         customer_details_collection_name=project.customer_details_collection_name,
+        flow_id=project.flow_id,
         customer_details_fields=project.customer_details_fields,
         field_mapping=project.field_mapping,
         created_by=str(project.created_by),
@@ -130,7 +131,7 @@ async def get_project(
     response_model=SuccessResponse[ProjectOut],
     summary="Update a project",
     description="""Partially updates a project — only the fields present in the request body are changed. This
-includes the data source (`report_db_name`, `report_collection_name`, `customer_details_collection_name`).
+includes the data source (`report_db_name`, `report_collection_name`, `customer_details_collection_name`, `flow_id`).
 Changing the report source does not migrate an existing `field_mapping`.
 
 **When to use:** renaming a project, or archiving one that's no longer active.
@@ -148,7 +149,12 @@ async def update_project(
     # stays Admin-only; field mapping and customer fields only need project.update.
     touches_source = any(
         v is not None
-        for v in (payload.report_db_name, payload.report_collection_name, payload.customer_details_collection_name)
+        for v in (
+            payload.report_db_name,
+            payload.report_collection_name,
+            payload.customer_details_collection_name,
+            payload.flow_id,
+        )
     )
     if touches_source and not await has_permission(auth, "project.create"):
         raise ForbiddenError("Only administrators can change a project's data source")
@@ -166,6 +172,7 @@ async def update_project(
         report_db_name=payload.report_db_name,
         report_collection_name=payload.report_collection_name,
         customer_details_collection_name=payload.customer_details_collection_name,
+        flow_id=payload.flow_id,
     )
     return success_response(message="Project updated", data=_to_out(project))
 

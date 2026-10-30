@@ -73,6 +73,7 @@ async def update_project(
     report_collection_name: str | None = None,
     customer_details_collection_name: str | None = None,
     customer_details_fields: list[dict] | None = None,
+    flow_id: str | None = None,
 ) -> Project:
     project = await project_repo.get_by_id(project_id)
     if project is None:
@@ -95,6 +96,7 @@ async def update_project(
         report_collection_name=report_collection_name,
         customer_details_collection_name=customer_details_collection_name,
         customer_details_fields=customer_details_fields,
+        flow_id=flow_id.strip() if flow_id is not None else None,
     )
 
 
