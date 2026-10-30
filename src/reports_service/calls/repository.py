@@ -28,6 +28,8 @@ class CallFilter:
     call_status: str | None = None
     # Case-insensitive substring match on conversation_id or flow_id.
     search: str | None = None
+    # Exact match on the call's flow_id.
+    flow_id: str | None = None
 
 
 def day_range_bounds(date_from: date | None, date_to: date | None) -> tuple[datetime | None, datetime | None]:
@@ -66,6 +68,8 @@ def build_mongo_query(call_filter: CallFilter) -> dict:
         query["disposition"] = call_filter.disposition
     if call_filter.call_status:
         query["call_status"] = call_filter.call_status
+    if call_filter.flow_id:
+        query["flow_id"] = call_filter.flow_id
     if call_filter.search:
         pattern = {"$regex": re.escape(call_filter.search), "$options": "i"}
         query["$or"] = [{"conversation_id": pattern}, {"flow_id": pattern}, {"bot_id": pattern}]
@@ -122,6 +126,8 @@ def matches_filter(call: Call, call_filter: CallFilter) -> bool:
     if call_filter.disposition and call.disposition != call_filter.disposition:
         return False
     if call_filter.call_status and call.call_status != call_filter.call_status:
+        return False
+    if call_filter.flow_id and (call._source_doc or {}).get("flow_id") != call_filter.flow_id:
         return False
     if call_filter.search:
         needle = call_filter.search.lower()

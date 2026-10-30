@@ -103,6 +103,7 @@ async def list_calls(
     search: str | None = Query(
         default=None, max_length=100, description="Case-insensitive substring match on conversation_id or flow_id.", examples=["17930", "prod-e3fbb647899d"]
     ),
+    flow_id: str | None = Query(default=None, max_length=100, description="Exact-match flow_id filter.", examples=["prod-e3fbb647899d"]),
     page: int = Query(default=1, ge=1, description="1-indexed page number to return."),
     page_size: int | None = Query(
         default=None,
@@ -127,6 +128,7 @@ async def list_calls(
         disposition=disposition,
         call_status=call_status,
         search=search,
+        flow_id=flow_id,
     )
     items, total = await call_repo.list_paginated(
         call_filter,
