@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     s3_credentials_encryption_key: str = ""
 
+    # Auto Scam (lead-score analytics): scam.py ships in reports_service/auto_scam/scam/ and runs with this
+    # app's own interpreter. Its Azure OpenAI credentials (AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT,
+    # AZURE_OPENAI_API_VERSION, AZURE_OPENAI_DEPLOYMENT) live in this same .env and are read by scam.py itself.
+
     # Daily send time, Asia/Kolkata hour-of-day (0-23).
     report_send_hour_ist: int = 6
     # How often the scheduler loop wakes up to check whether it's time to

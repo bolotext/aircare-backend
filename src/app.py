@@ -22,6 +22,9 @@ from slowapi.errors import RateLimitExceeded
 
 from gateway.config import get_settings as get_gateway_settings
 from gateway.proxy import forward
+from reports_service.auto_scam import records as auto_scam_records
+from reports_service.auto_scam import runner as auto_scam_runner
+from reports_service.auto_scam.router import router as auto_scam_router
 from reports_service.calls.router import router as calls_router
 from reports_service.customer_details.router import router as customer_details_router
 from reports_service.dashboard.router import router as dashboard_router
@@ -81,6 +84,7 @@ _TAGS_METADATA = [
     {"name": "patient-calls", "description": "CRUD for AQI-triggered patient advisory calls."},
     {"name": "risk-thresholds", "description": "Admin-only CRUD for the condition -> AQI risk-threshold reference table."},
     {"name": "s3", "description": "Per-project S3 connection (credentials stored encrypted) and a browser for the bucket's contents."},
+    {"name": "auto-scam", "description": "Upload conversation JSON, configure and run the lead-score analytics script (scam.py), and review previous vs updated values."},
     {"name": "internal", "description": "Used only by this app itself — gated by `X-Internal-Api-Key`."},
     {"name": "health", "description": "Service liveness check."},
 ]
@@ -110,6 +114,8 @@ def make_internal_client(app: FastAPI) -> httpx.AsyncClient:
 async def lifespan(app: FastAPI):
     await init_databases()
     app.state.users_http_client = make_internal_client(app)
+    await auto_scam_records.ensure_indexes()
+    await auto_scam_runner.fail_stale_runs()
     app.state.http_client = httpx.AsyncClient(timeout=gateway_settings.upstream_timeout_seconds)
     yield
     await app.state.http_client.aclose()
@@ -163,6 +169,7 @@ def create_app() -> FastAPI:
         patient_calls_router,
         risk_thresholds_router,
         s3_router,
+        auto_scam_router,
     ):
         app.include_router(router, prefix=api_v1)
 

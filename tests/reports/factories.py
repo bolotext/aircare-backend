@@ -26,7 +26,6 @@ DEFAULT_PERMISSIONS = {
             "patient_call.create",
             "patient_call.update",
             "patient_call.delete",
-            "s3.view",
         }
     ),
     "VIEWER": frozenset({"project.view", "report.view", "patient.view", "patient_call.view"}),

@@ -19,6 +19,16 @@ tests/{users,reports}/
 
 Reports resolves identity/project config from the Users module in-process (no network hop).
 
+## Auto Scam (lead-score analytics)
+
+`src/reports_service/auto_scam/` + frontend page **Auto Scam** (project workspace sidebar). Upload raw conversation JSON
+(file name → `project_id`), CRUD the conversations, tick files and run the analytics from `auto_scam/scam/scam.py`
+(called in-process; no files are written). Each result is stored in `auto_scam_results`, one row per `customerCRTId`
+(previous vs updated stage code / lead score); a run **skips conversations that already have a successful result**
+unless "Re-analyse already analysed" is ticked, and editing a conversation clears its result. Collections: `auto_scam`,
+`auto_scam_results`, `auto_scam_datasets` (settings + prompt), `auto_scam_runs`. The Azure OpenAI credentials
+(`AZURE_OPENAI_*`) go in this `.env`. Post-processing logic (STAGE_CODE / setupTime / … → INTEREST_CLASSIFICATION, DISPOSITION) is a rule list edited in the Settings tab. New permissions `auto_scam.view|manage|run` — re-run `make seed`.
+
 ## Roles & permissions
 
 | Role | Scope | Can do |

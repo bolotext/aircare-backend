@@ -126,25 +126,23 @@ async def test_without_encryption_key_credentials_are_stored_as_given_and_still_
     assert (await client.get("/api/v1/s3/objects", params=params)).json()["code"] == 200
 
 
-async def test_supervisor_can_browse_but_not_configure_and_viewer_cannot_browse(app, client):
+async def test_s3_is_admin_only(app, client):
     _as(app, "ADMIN")
     params = {"project_id": str(PROJECT)}
     await client.put("/api/v1/s3/config", params=params, json=BODY)
-
-    _as(app, "SUPERVISOR")
     assert (await client.get("/api/v1/s3/objects", params=params)).json()["code"] == 200
-    assert (await client.put("/api/v1/s3/config", params=params, json=BODY)).json()["code"] == 403
-    assert (await client.delete("/api/v1/s3/config", params=params)).json()["code"] == 403
 
-    _as(app, "VIEWER")
-    assert (await client.get("/api/v1/s3/objects", params=params)).json()["code"] == 403
+    for role in ("SUPERVISOR", "VIEWER"):
+        _as(app, role)
+        assert (await client.get("/api/v1/s3/config", params=params)).json()["code"] == 403
+        assert (await client.get("/api/v1/s3/objects", params=params)).json()["code"] == 403
+        assert (await client.put("/api/v1/s3/config", params=params, json=BODY)).json()["code"] == 403
+        assert (await client.delete("/api/v1/s3/config", params=params)).json()["code"] == 403
 
 
-async def test_other_projects_are_forbidden_and_unconfigured_is_404(app, client):
-    app.dependency_overrides[get_current_identity] = lambda: make_identity("SUPERVISOR", project_ids=[str(PROJECT)])
-    other = {"project_id": str(PydanticObjectId())}
-    assert (await client.get("/api/v1/s3/objects", params=other)).json()["code"] == 403
-    assert (await client.get("/api/v1/s3/objects", params={"project_id": str(PROJECT)})).json()["code"] == 404
+async def test_unconfigured_project_is_404_for_admin(app, client):
+    _as(app, "ADMIN")
+    assert (await client.get("/api/v1/s3/objects", params={"project_id": str(PydanticObjectId())})).json()["code"] == 404
 
 
 async def test_delete_removes_credentials(app, client):

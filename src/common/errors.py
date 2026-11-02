@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -96,7 +97,8 @@ def register_exception_handlers(app: FastAPI) -> None:
             content=error_response(
                 code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 message="Request validation failed",
-                errors={"type": "VALIDATION_ERROR", "fields": exc.errors()},
+                # a validator that raises ValueError puts the exception object in `ctx`, which is not JSON-serialisable
+                errors={"type": "VALIDATION_ERROR", "fields": jsonable_encoder(exc.errors(), custom_encoder={Exception: str})},
             ),
         )
 

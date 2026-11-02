@@ -1,6 +1,7 @@
 from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
 
+from reports_service.auto_scam.model import AutoScamDataset, AutoScamResult, AutoScamRun
 from reports_service.calls.model import Call
 from reports_service.core.config import get_settings
 from reports_service.patient_calls.model import PatientCall
@@ -43,7 +44,7 @@ async def init_db(client: AsyncIOMotorClient | None = None) -> None:
     _client = active_client
     await init_beanie(
         database=active_client[settings.mongo_db_name],
-        document_models=[Call, ScenarioRun, ReportRun, ReportRecipient, Patient, RiskThreshold, PatientCall, S3Config],
+        document_models=[Call, ScenarioRun, ReportRun, ReportRecipient, Patient, RiskThreshold, PatientCall, S3Config, AutoScamDataset, AutoScamRun, AutoScamResult],
     )
 
 
