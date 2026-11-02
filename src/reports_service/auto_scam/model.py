@@ -94,7 +94,7 @@ class AutoScamRun(Document):
     error: str | None = None
     # Subset to analyse: explicit conversation ids, or a search (every match); both empty = the whole file.
     record_ids: list[str] = Field(default_factory=list)
-    search: str | None = None
+    filters: dict | None = None  # the filters whose every match was selected ("select all N"); None = not a filter run
     force: bool = False  # re-analyse conversations that already have a result
     skipped: int = 0  # conversations skipped because they were already analysed
     cancel_requested: bool = False

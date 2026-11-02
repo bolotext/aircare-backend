@@ -224,7 +224,7 @@ async def test_bulk_delete(app, client):
     assert _unwrap(r)["deleted"] == 1  # an id from another dataset is ignored
     assert _unwrap(await client.get(f"{BASE}/datasets/f2/records", params=P))["total"] == 2
     assert (await client.post(f"{BASE}/datasets/f1/records/bulk-delete", json={**P, "record_ids": []})).json()["code"] == 400
-    r = await client.post(f"{BASE}/datasets/f2/records/bulk-delete", json={**P, "all_matching": True, "q": "DSCN"})
+    r = await client.post(f"{BASE}/datasets/f2/records/bulk-delete", json={**P, "all_matching": True, "filters": {"q": "DSCN"}})
     assert _unwrap(r)["deleted"] == 1
     r = await client.post(f"{BASE}/datasets/f2/records/bulk-delete", json={**P, "all_matching": True})
     assert _unwrap(r)["deleted"] == 1
@@ -318,7 +318,7 @@ async def test_run_only_the_selected_conversations(app, client, fake_scam):
 
     # "all matching" a search (STAGE_CODE T -> c3..c5)
     fake_scam["calls"].clear()
-    run = await go(all_matching=True, q="T")
+    run = await go(all_matching=True, filters={"q": "T"})
     assert sorted(c for c, _ in fake_scam["calls"]) == ["c3", "c5"]  # c4 already analysed
 
     two = await client.post(f"{BASE}/runs", json={**P, "file_names": ["sel", "other"], "record_ids": [ids["c1"]]})
@@ -473,3 +473,98 @@ async def test_field_values_for_dropdowns(app, client):
     assert (await client.get(f"{BASE}/field-values", params={"project_id": str(OTHER)})).json()["code"] == 403
     _perms(app, "auto_scam.manage")
     assert (await client.get(f"{BASE}/field-values", params=P)).json()["code"] == 403
+
+
+# ------------------------------------------------------------------ filters
+def _rows():
+    day = lambda d: 1792987551 + d * 86400  # 2026-10-26 + d days (UTC)
+    return json.dumps([
+        {"customerCRTId": "r1", "tempDate": "26/10/2026", "STAGE_CODE": "DSCN", "DISPOSITION": "WRONG_NUMBER", "INTEREST_CLASSIFICATION": "COLD", "conversation_log": []},
+        {"customerCRTId": "r2", "tempDate": "27/10/2026", "STAGE_CODE": "INTERESTED", "DISPOSITION": "NEUTRAL", "INTEREST_CLASSIFICATION": "WARM", "conversation_log": []},
+        {"customerCRTId": "r3", "tempDate": "28/10/2026", "STAGE_CODE": "INTERESTED", "DISPOSITION": "NOT_INTERESTED", "INTEREST_CLASSIFICATION": "COLD", "conversation_log": []},
+        {"customerCRTId": "r4", "STAGE_CODE": "BUSY", "DISPOSITION": "NEUTRAL", "INTEREST_CLASSIFICATION": "HOT",  # no tempDate: from the first message timestamp
+         "conversation_log": [{"role": "assistant", "content": "hi", "timestamp": day(5)}]},
+        {"customerCRTId": "r5", "STAGE_CODE": "BUSY", "conversation_log": []},  # no date at all
+    ])
+
+
+def test_call_date_is_derived_from_tempdate_or_first_timestamp():
+    from reports_service.auto_scam.records import derive_call_date
+
+    assert derive_call_date({"tempDate": "26/10/2026"}) == "2026-10-26"
+    assert derive_call_date({"tempDate": "bad", "conversation_log": [{"timestamp": 1792987551.06}]}) == "2026-10-26"
+    assert derive_call_date({"conversation_log": [{"role": "x"}, {"timestamp": 1793073951}]}) == "2026-10-27"
+    assert derive_call_date({"tempDate": "", "conversation_log": []}) is None
+    assert derive_call_date({"conversation_log": [{"timestamp": True}, "junk"]}) is None
+
+
+async def test_filters_by_disposition_stage_class_and_date(app, client):
+    _perms(app, "auto_scam.view", "auto_scam.manage", "auto_scam.run")
+    await _upload(client, "flt", _rows())
+
+    async def ids(**params):
+        data = _unwrap(await client.get(f"{BASE}/datasets/flt/records", params={**P, **params}))
+        return sorted(i["customerCRTId"] for i in data["items"]), data["total"]
+
+    assert (await ids())[1] == 5
+    assert (await ids(dispositions=["NEUTRAL"]))[0] == ["r2", "r4"]
+    assert (await ids(dispositions=["NEUTRAL", "WRONG_NUMBER"]))[0] == ["r1", "r2", "r4"]  # multi: any of
+    assert (await ids(stage_codes=["INTERESTED"]))[0] == ["r2", "r3"]
+    assert (await ids(classifications=["COLD", "HOT"]))[0] == ["r1", "r3", "r4"]
+    assert (await ids(stage_codes=["INTERESTED", "BUSY"], dispositions=["NEUTRAL"]))[0] == ["r2", "r4"]  # AND across filters
+    assert (await ids(date_from="2026-10-27", date_to="2026-10-28"))[0] == ["r2", "r3"]
+    assert (await ids(date_from="2026-10-28"))[0] == ["r3", "r4"]  # r4's date comes from its first timestamp (2026-10-31)
+    assert (await ids(date_to="2026-10-26"))[0] == ["r1"]  # undated r5 never matches a date filter
+    assert (await ids(q="r2", dispositions=["NEUTRAL"]))[0] == ["r2"]
+    assert (await ids(dispositions=["NOPE"]))[0] == []
+    items = _unwrap(await client.get(f"{BASE}/datasets/flt/records", params={**P, "stage_codes": ["DSCN"]}))["items"]
+    assert items[0]["call_date"] == "2026-10-26"
+    bad = await client.get(f"{BASE}/datasets/flt/records", params={**P, "date_from": "26/10/2026"})
+    assert bad.json()["code"] == 422
+    # the derived date is not part of the editable record, and editing re-derives it
+    rid = items[0]["id"]
+    rec = _unwrap(await client.get(f"{BASE}/records/{rid}"))
+    assert "call_date" not in rec
+    rec["tempDate"] = "01/11/2026"
+    await client.put(f"{BASE}/records/{rid}", json={**rec, "call_date": "1999-01-01"})
+    assert (await ids(date_from="2026-11-01"))[0] == ["r1"]
+
+
+async def test_filter_options_come_from_the_files_latest_conversations(app, client):
+    _perms(app, "auto_scam.view", "auto_scam.manage")
+    await _upload(client, "flt", _rows())
+    await _upload(client, "other", json.dumps([{"customerCRTId": "o", "STAGE_CODE": "ONLY_IN_OTHER", "tempDate": "01/01/2026", "conversation_log": []}]))
+    data = _unwrap(await client.get(f"{BASE}/field-values", params={**P, "file_name": "flt"}))
+    assert data["values"]["STAGE_CODE"] == ["BUSY", "DSCN", "INTERESTED"]  # not ONLY_IN_OTHER
+    assert data["values"]["DISPOSITION"] == ["NEUTRAL", "NOT_INTERESTED", "WRONG_NUMBER"]
+    assert data["dates"] == {"min": "2026-10-26", "max": "2026-10-31"}
+    whole = _unwrap(await client.get(f"{BASE}/field-values", params=P))
+    assert "ONLY_IN_OTHER" in whole["values"]["STAGE_CODE"] and whole["dates"]["min"] == "2026-01-01"
+
+
+async def test_bulk_actions_use_the_same_filters(app, client, fake_scam):
+    _perms(app, "auto_scam.view", "auto_scam.manage", "auto_scam.run")
+    await _upload(client, "flt", _rows())
+    filt = {"dispositions": ["NEUTRAL"], "date_from": "2026-10-27"}
+    started = _unwrap(await client.post(f"{BASE}/runs", json={**P, "file_names": ["flt"], "all_matching": True, "filters": filt}))
+    run_id = started["started"][0]["run_id"]
+    for _ in range(100):
+        run = _unwrap(await client.get(f"{BASE}/runs/{run_id}"))
+        if run["status"] not in ("queued", "running"):
+            break
+        await asyncio.sleep(0.1)
+    assert run["status"] == "succeeded" and run["filtered"] is True and "matching the filters" in run["log"]
+    assert sorted(c for c, _ in fake_scam["calls"]) == ["r2", "r4"]
+
+    r = await client.post(f"{BASE}/datasets/flt/records/bulk-delete", json={**P, "all_matching": True, "filters": {"stage_codes": ["BUSY"], "dispositions": ["NEUTRAL"]}})
+    assert _unwrap(r)["deleted"] == 1  # only r4
+    left = _unwrap(await client.get(f"{BASE}/datasets/flt/records", params=P))
+    assert sorted(i["customerCRTId"] for i in left["items"]) == ["r1", "r2", "r3", "r5"]
+
+
+async def test_startup_backfills_call_date_for_older_records(app, client):
+    from reports_service.auto_scam.records import ensure_indexes
+
+    await records_collection().insert_one({"aircare_project_id": PROJECT, "project_id": "old", "customerCRTId": "x", "tempDate": "05/06/2026"})
+    await ensure_indexes()
+    assert (await records_collection().find_one({"customerCRTId": "x"}))["call_date"] == "2026-06-05"

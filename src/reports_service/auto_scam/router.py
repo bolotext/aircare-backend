@@ -21,14 +21,14 @@ from pydantic import BaseModel, Field
 from reports_service.auto_scam import runner
 from reports_service.auto_scam.model import AutoScamConfig, AutoScamDataset, AutoScamResult, AutoScamRun, utcnow
 from reports_service.auto_scam.rules import Rule, apply_rules, default_rules
-from reports_service.auto_scam.records import KEY_PROJECTION, record_filter, record_key, records_collection
+from reports_service.auto_scam.records import KEY_PROJECTION, derive_call_date, record_filter, record_key, records_collection
 from reports_service.core.deps import ensure_project_access, require_permission
 from reports_service.core.users_client import IdentityContext
 
 router = APIRouter(prefix="/auto-scam", tags=["auto-scam"])
 
 ACTIVE = ("queued", "running")
-RESERVED = ("_id", "id", "project_id", "aircare_project_id", "source_id", "uploaded_at")
+RESERVED = ("_id", "id", "project_id", "aircare_project_id", "source_id", "uploaded_at", "call_date")
 FILE_NAME_RE = re.compile(r"^[\w][\w .\-]{0,198}$")
 
 
@@ -54,13 +54,24 @@ class UploadBody(BaseModel):
     overwrite: bool = False
 
 
+class RecordFilters(BaseModel):
+    """What the Conversations tab filters on. Empty lists / blanks mean "no restriction"."""
+
+    q: str = Field("", max_length=100)
+    dispositions: list[str] = Field(default_factory=list, max_length=100)
+    stage_codes: list[str] = Field(default_factory=list, max_length=100)
+    classifications: list[str] = Field(default_factory=list, max_length=100)
+    date_from: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    date_to: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
 class RunBody(BaseModel):
     project_id: str
     force: bool = Field(False, description="Re-analyse conversations that already have a result (matched by customerCRTId).")
     # Optional subset (needs exactly one file): selected conversations, or every conversation matching `q`.
     record_ids: list[str] = Field(default_factory=list, max_length=1000)
-    all_matching: bool = False
-    q: str = Field("", max_length=100)
+    all_matching: bool = Field(False, description="Run every conversation matching `filters` (the whole file if none).")
+    filters: RecordFilters = Field(default_factory=RecordFilters)
     file_names: list[str] = Field(min_length=1, max_length=50)
 
 
@@ -81,13 +92,14 @@ def _plain(doc: dict) -> dict:
     out["id"] = str(doc["_id"])
     out.pop("_id", None)
     out.pop("aircare_project_id", None)
+    out.pop("call_date", None)  # derived, not editable
     return out
 
 
 def _run_out(r: AutoScamRun) -> dict:
     return {
         "id": str(r.id), "file_name": r.file_name, "status": r.status, "total": r.total, "processed": r.processed,
-        "failed": r.failed, "skipped": r.skipped, "force": r.force, "selected": len(r.record_ids), "search": r.search, "error": r.error, "exit_code": r.exit_code, "cancel_requested": r.cancel_requested,
+        "failed": r.failed, "skipped": r.skipped, "force": r.force, "selected": len(r.record_ids), "filtered": bool(r.filters), "error": r.error, "exit_code": r.exit_code, "cancel_requested": r.cancel_requested,
         "created_at": _iso(r.created_at), "started_at": _iso(r.started_at), "finished_at": _iso(r.finished_at),
     }
 
@@ -147,22 +159,30 @@ FIXED_VALUE_FIELDS = ("STAGE_CODE", "DISPOSITION", "INTEREST_CLASSIFICATION")
 FIELD_VALUE_SAMPLE = 500
 
 
-@router.get("/field-values", summary="The values STAGE_CODE / DISPOSITION / INTEREST_CLASSIFICATION take, for dropdowns")
+@router.get("/field-values", summary="The values STAGE_CODE / DISPOSITION / INTEREST_CLASSIFICATION take, for dropdowns and filters")
 async def field_values(
     project_id: str = Query(...),
+    file_name: str | None = Query(None, description="Limit to one file (filters); omit for the whole project (rule editor)."),
     identity: IdentityContext = Depends(require_permission("auto_scam.view")),
 ) -> dict:
-    """Distinct values of the fixed-vocabulary fields, taken from the project's most recent 500 conversations."""
+    """Distinct values of the fixed-vocabulary fields, from the most recent 500 conversations, plus their date range."""
     ensure_project_access(identity, project_id)
-    projection = {f: 1 for f in FIXED_VALUE_FIELDS}
-    docs = await records_collection().find({"aircare_project_id": _pid(project_id)}, projection).sort("_id", -1).limit(FIELD_VALUE_SAMPLE).to_list(FIELD_VALUE_SAMPLE)
+    flt: dict[str, Any] = {"aircare_project_id": _pid(project_id)}
+    if file_name:
+        flt["project_id"] = file_name
+    projection = {**{f: 1 for f in FIXED_VALUE_FIELDS}, "call_date": 1}
+    docs = await records_collection().find(flt, projection).sort("_id", -1).limit(FIELD_VALUE_SAMPLE).to_list(FIELD_VALUE_SAMPLE)
     values: dict[str, set[str]] = {f: set() for f in FIXED_VALUE_FIELDS}
     for d in docs:
         for f in FIXED_VALUE_FIELDS:
             v = d.get(f)
             if isinstance(v, str) and v.strip():
                 values[f].add(v.strip())
-    return success_response(data={"sampled": len(docs), "values": {f: sorted(v) for f, v in values.items()}})
+    dates = sorted(d["call_date"] for d in docs if d.get("call_date"))
+    return success_response(data={
+        "sampled": len(docs), "values": {f: sorted(v) for f, v in values.items()},
+        "dates": {"min": dates[0], "max": dates[-1]} if dates else None,
+    })
 
 
 @router.get("/datasets", summary="List a project's uploaded datasets with record counts and last run")
@@ -224,7 +244,7 @@ async def upload(body: UploadBody, identity: IdentityContext = Depends(require_p
         source_id = rec.pop("_id", None)
         for reserved in ("project_id", "aircare_project_id"):
             rec.pop(reserved, None)
-        rec.update(project_id=name, aircare_project_id=pid, uploaded_at=ts)
+        rec.update(project_id=name, aircare_project_id=pid, uploaded_at=ts, call_date=derive_call_date(rec))
         if source_id is not None:
             rec["source_id"] = str(source_id)
         docs.append(rec)
@@ -318,8 +338,8 @@ async def put_config(
 
 
 # ------------------------------------------------------------------ records CRUD
-def _record_filter(ds: AutoScamDataset, q: str = "") -> dict[str, Any]:
-    return record_filter(ds.aircare_project_id, ds.file_name, q)
+def _record_filter(ds: AutoScamDataset, filters: dict | None = None) -> dict[str, Any]:
+    return record_filter(ds.aircare_project_id, ds.file_name, filters)
 
 
 async def _drop_results(pid, file_name: str, keys: list[str]) -> None:
@@ -330,8 +350,8 @@ async def _drop_results(pid, file_name: str, keys: list[str]) -> None:
 class BulkRecordsBody(BaseModel):
     project_id: str
     record_ids: list[str] = Field(default_factory=list, max_length=1000)
-    all_matching: bool = Field(False, description="Delete every conversation matching `q` (all of them if blank), ignoring record_ids.")
-    q: str = Field("", max_length=100)
+    all_matching: bool = Field(False, description="Delete every conversation matching `filters` (all of them if none), ignoring record_ids.")
+    filters: RecordFilters = Field(default_factory=RecordFilters)
 
 
 @router.post("/datasets/{file_name}/records/bulk-delete", summary="Delete several conversations (selected ids, or everything matching a search)")
@@ -341,7 +361,7 @@ async def bulk_delete_records(
     ensure_project_access(identity, body.project_id)
     ds = await _dataset(body.project_id, file_name)
     if body.all_matching:
-        flt = _record_filter(ds, body.q)
+        flt = _record_filter(ds, body.filters.model_dump())
     else:
         if not body.record_ids:
             raise BadRequestError("Select at least one conversation")
@@ -362,11 +382,17 @@ async def list_records(
     skip: int = Query(0, ge=0),
     limit: int = Query(25, ge=1, le=200),
     q: str = Query("", max_length=100),
+    dispositions: list[str] = Query(default_factory=list),
+    stage_codes: list[str] = Query(default_factory=list),
+    classifications: list[str] = Query(default_factory=list),
+    date_from: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    date_to: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     identity: IdentityContext = Depends(require_permission("auto_scam.view")),
 ) -> dict:
     ensure_project_access(identity, project_id)
     ds = await _dataset(project_id, file_name)
-    flt = _record_filter(ds, q)
+    flt = _record_filter(ds, {"q": q, "dispositions": dispositions, "stage_codes": stage_codes,
+                              "classifications": classifications, "date_from": date_from, "date_to": date_to})
     col = records_collection()
     total = await col.count_documents(flt)
     page = await col.find(flt).sort("_id", 1).skip(skip).limit(limit).to_list(limit)
@@ -383,7 +409,7 @@ async def list_records(
         r = results.get(record_key(d))
         items.append({
             "id": str(d["_id"]), "customerCRTId": d.get("customerCRTId"), "STAGE_CODE": d.get("STAGE_CODE"),
-            "DISPOSITION": d.get("DISPOSITION"), "messages": len(d.get("conversation_log") or []),
+            "DISPOSITION": d.get("DISPOSITION"), "call_date": d.get("call_date"), "messages": len(d.get("conversation_log") or []),
             "values": {n: d.get(n) for n in names},  # what the conversation had before analytics
             "result": {
                 "updated": {f["field"]: f["updated"] for f in r.fields if f["field"] in names},
@@ -411,7 +437,7 @@ async def create_record(
     rec = _from_json_body(body)
     for key in RESERVED:
         rec.pop(key, None)
-    rec.update(project_id=file_name, aircare_project_id=ds.aircare_project_id, uploaded_at=utcnow())
+    rec.update(project_id=file_name, aircare_project_id=ds.aircare_project_id, uploaded_at=utcnow(), call_date=derive_call_date(rec))
     res = await records_collection().insert_one(rec)
     return success_response(code=201, message="Created", data={"id": str(res.inserted_id)})
 
@@ -427,7 +453,7 @@ async def update_record(
     for key in RESERVED:
         rec.pop(key, None)
     keep = {k: existing[k] for k in ("project_id", "aircare_project_id", "source_id", "uploaded_at") if k in existing}
-    await records_collection().replace_one({"_id": existing["_id"]}, {**rec, **keep})
+    await records_collection().replace_one({"_id": existing["_id"]}, {**rec, **keep, "call_date": derive_call_date(rec)})
     # the content changed, so its analytics are stale: drop them and the next run re-analyses it
     await _drop_results(existing["aircare_project_id"], existing["project_id"], [record_key(existing)])
     return success_response(message="Updated", data={"id": record_id})
@@ -467,7 +493,7 @@ async def start_runs(body: RunBody, identity: IdentityContext = Depends(require_
             run = await AutoScamRun(
                 aircare_project_id=pid, file_name=name, config=ds.config, started_by=identity.user_id,
                 prompt_text=ds.config.prompt, force=body.force, record_ids=body.record_ids,
-                search=body.q if body.all_matching else None,
+                filters=body.filters.model_dump() if body.all_matching else None,
             ).insert()
             runner.submit(str(run.id))
             started.append({"run_id": str(run.id), "file_name": name})

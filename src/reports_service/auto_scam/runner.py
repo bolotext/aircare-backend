@@ -21,7 +21,7 @@ from reports_service.auto_scam.records import record_filter, record_key, records
 
 logger = logging.getLogger(__name__)
 
-INTERNAL_FIELDS = ("_id", "project_id", "aircare_project_id", "source_id", "uploaded_at")
+INTERNAL_FIELDS = ("_id", "project_id", "aircare_project_id", "source_id", "uploaded_at", "call_date")
 SCAM_DIR = Path(__file__).resolve().parent / "scam"  # scam.py + the bundled analytics_prompt.yaml
 STALE_AFTER = timedelta(seconds=90)
 LOG_TAIL_CHARS = 20_000
@@ -128,7 +128,7 @@ async def _execute(run_id: str) -> None:
     todo: list[tuple[str, dict]] = []
     seen: set[str] = set()
     skipped = 0
-    flt = record_filter(run.aircare_project_id, run.file_name, run.search or "")
+    flt = record_filter(run.aircare_project_id, run.file_name, run.filters)
     if run.record_ids:  # explicit selection (ids outside this file never match)
         flt["_id"] = {"$in": [ObjectId(i) for i in run.record_ids]}
     cursor = records_collection().find(flt)
@@ -142,7 +142,7 @@ async def _execute(run_id: str) -> None:
         else:
             todo.append((key, doc))
 
-    scope = f"{len(run.record_ids)} selected" if run.record_ids else (f'matching "{run.search}"' if run.search else "whole file")
+    scope = f"{len(run.record_ids)} selected" if run.record_ids else ("matching the filters" if run.filters else "whole file")
     log: list[str] = [f"scope: {scope}", f"{len(todo)} to analyse, {skipped} already analysed (skipped)"
                       f"{' [re-analyse all]' if run.force else ''}; {run.config.workers} workers"]
     await _set(run_id, status="running", started_at=utcnow(), total=len(todo), skipped=skipped,
