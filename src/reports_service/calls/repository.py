@@ -30,6 +30,30 @@ class CallFilter:
     search: str | None = None
     # Exact match on the call's flow_id.
     flow_id: str | None = None
+    # Case-insensitive substring match on any turn's text in the call's
+    # transcript (`raw.conversation_log[].content`).
+    transcript_search: str | None = None
+
+
+def _transcript_texts(raw: dict | None) -> list[str]:
+    log = (raw or {}).get("conversation_log")
+    if not isinstance(log, list):
+        return []
+    return [t["content"] for t in log if isinstance(t, dict) and isinstance(t.get("content"), str)]
+
+
+def transcript_snippet(raw: dict | None, needle: str, radius: int = 60) -> str | None:
+    """The first transcript turn containing `needle` (case-insensitive),
+    trimmed to ~`radius` characters either side of the match, or None."""
+
+    lowered = needle.lower()
+    for text in _transcript_texts(raw):
+        at = text.lower().find(lowered)
+        if at == -1:
+            continue
+        start, end = max(0, at - radius), min(len(text), at + len(needle) + radius)
+        return f"{'…' if start else ''}{text[start:end]}{'…' if end < len(text) else ''}"
+    return None
 
 
 def day_range_bounds(date_from: date | None, date_to: date | None) -> tuple[datetime | None, datetime | None]:
@@ -83,6 +107,8 @@ def build_mongo_query(call_filter: CallFilter) -> dict:
             {"bot_id": pattern},
             *({field: pattern} for field in PHONE_SEARCH_FIELDS),
         ]
+    if call_filter.transcript_search:
+        query["raw.conversation_log.content"] = {"$regex": re.escape(call_filter.transcript_search), "$options": "i"}
     return query
 
 
@@ -147,6 +173,8 @@ def matches_filter(call: Call, call_filter: CallFilter) -> bool:
         haystacks = (call.conversation_id, call.bot_id, flow_id if isinstance(flow_id, str) else "", *phones)
         if not any(needle in h.lower() for h in haystacks):
             return False
+    if call_filter.transcript_search and transcript_snippet(call.raw, call_filter.transcript_search) is None:
+        return False
     return True
 
 

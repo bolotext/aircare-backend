@@ -104,6 +104,9 @@ async def list_calls(
         default=None, max_length=100, description="Case-insensitive substring match on conversation_id, flow_id or customer phone number.", examples=["17930", "prod-e3fbb647899d"]
     ),
     flow_id: str | None = Query(default=None, max_length=100, description="Exact-match flow_id filter.", examples=["prod-e3fbb647899d"]),
+    transcript_search: str | None = Query(
+        default=None, min_length=2, max_length=100, description="Case-insensitive substring match on the text of any turn in the call transcript. Each returned item carries a `transcript_match` excerpt.", examples=["inhaler"]
+    ),
     page: int = Query(default=1, ge=1, description="1-indexed page number to return."),
     page_size: int | None = Query(
         default=None,
@@ -129,6 +132,7 @@ async def list_calls(
         call_status=call_status,
         search=search,
         flow_id=flow_id,
+        transcript_search=transcript_search,
     )
     items, total = await call_repo.list_paginated(
         call_filter,
@@ -142,7 +146,12 @@ async def list_calls(
         data=PaginatedCalls(
             columns=mapped_columns(source.field_mapping),
             items=[
-                _to_list_item(c, source.field_mapping).model_copy(update={"scenario": scenario_from_report(c)})
+                _to_list_item(c, source.field_mapping).model_copy(
+                    update={
+                        "scenario": scenario_from_report(c),
+                        "transcript_match": call_repo.transcript_snippet(c.raw, transcript_search) if transcript_search else None,
+                    }
+                )
                 for c in items
             ],
             page=page,

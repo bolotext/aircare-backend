@@ -47,6 +47,7 @@ class CallListItem(BaseModel):
     connected_seconds: float | None = Field(description="Talk time in seconds while connected, or `null` when not applicable (e.g. unanswered).")
     tool_failure_count: int = Field(description="Number of tool/function-call invocations during this call that failed.")
     scenario: str | None = Field(default=None, description="Tester-entered Scenarios text for this call; populated on `GET /calls`.")
+    transcript_match: str | None = Field(default=None, description="Transcript excerpt around the first match of the `transcript_search` query; populated on `GET /calls` only when that filter is used.")
     fields: dict[str, Any] = Field(default_factory=dict, description="Values of the project's Field Mapper columns; populated on `GET /calls` only.")
 
 

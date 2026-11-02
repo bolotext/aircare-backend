@@ -91,3 +91,21 @@ async def test_call_detail_includes_raw_transcript(app, client):
     assert data["raw"]["conversation_log"][0]["content"] == "hi"
     # A native-Call-schema project (no adapter) has no known recording source.
     assert data["recording_available"] is False
+
+
+async def test_transcript_search_filters_and_returns_snippet(app, client):
+    hit = [{"role": "user", "content": "I forgot my Inhaler at home"}]
+    miss = [{"role": "user", "content": "Nothing relevant"}]
+    await make_call(PROJECT, ORG, conversation_id="t-hit", raw={"conversation_log": hit})
+    await make_call(PROJECT, ORG, conversation_id="t-miss", raw={"conversation_log": miss})
+
+    app.dependency_overrides[get_current_identity] = lambda: make_identity("ADMIN")
+
+    resp = await client.get("/api/v1/calls", params={"project_id": str(PROJECT), "transcript_search": "inhaler"})
+    items = resp.json()["data"]["items"]
+    assert [i["conversation_id"] for i in items] == ["t-hit"]
+    assert "Inhaler" in items[0]["transcript_match"]
+
+    # Regex metacharacters are matched literally, not interpreted.
+    resp = await client.get("/api/v1/calls", params={"project_id": str(PROJECT), "transcript_search": ".*"})
+    assert resp.json()["data"]["items"] == []
