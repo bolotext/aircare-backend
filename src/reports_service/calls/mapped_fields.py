@@ -103,3 +103,34 @@ def extract_fields(source_doc: dict | None, mapping: dict[str, str]) -> dict[str
         for name, raw in mapping.items()
         if name and raw
     }
+
+
+_IMMUTABLE_KEYS = {"_id"}
+_AUDIT_KEYS = {"source_edited_by", "source_edited_at"}
+
+
+def diff_source_document(current: dict | None, edited: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Compares the edited detail-view document against the stored one and
+    returns `(to_set, to_unset)`. Only genuinely changed keys are returned, so
+    values the detail view serialised lossily (ObjectId/datetime -> string) keep
+    their stored BSON type when untouched. Raises ValueError when the edit
+    touches `_id`, a withheld personal-data field, or uses an unsafe key."""
+
+    current = current or {}
+    shown = source_document(current)
+    to_set: dict[str, Any] = {}
+    for key, value in edited.items():
+        if not isinstance(key, str) or not key or key.startswith("$") or "." in key:
+            raise ValueError(f"Invalid field name: {key!r}")
+        if key in shown and shown[key] == value:
+            continue
+        if key in _IMMUTABLE_KEYS or key in _AUDIT_KEYS:
+            raise ValueError(f"Field '{key}' cannot be edited")
+        if is_restricted(key) and key.lower() not in _DETAIL_ALLOWED:
+            raise ValueError(f"Field '{key}' holds personal data and cannot be edited")
+        to_set[key] = value
+    to_unset = [k for k in current if k not in edited]
+    for key in to_unset:
+        if key in _IMMUTABLE_KEYS or key in _AUDIT_KEYS or (is_restricted(key) and key.lower() not in _DETAIL_ALLOWED):
+            raise ValueError(f"Field '{key}' cannot be removed")
+    return to_set, to_unset

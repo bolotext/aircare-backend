@@ -11,7 +11,7 @@ from reports_service.calls import repository as call_repo
 from reports_service.calls.model import Call
 from reports_service.calls.recording import fetch_recording_audio, resolve_recording_ref
 from reports_service.calls.repository import CallFilter, day_range_bounds
-from reports_service.calls.mapped_fields import extract_fields, mapped_columns, source_document
+from reports_service.calls.mapped_fields import diff_source_document, extract_fields, mapped_columns, source_document
 from reports_service.calls.journey import load_journey
 from reports_service.calls.prod_import import PHONE_NUMBER_PATTERN, import_from_prod
 from reports_service.calls.schema import CallDetail, CallJourney, CallListItem, PaginatedCalls, ProdImportResult
@@ -339,6 +339,70 @@ async def set_call_scenario(
     text = body.scenario.strip()
     await _write_scenario_to_report(source.collection, call, text, identity.user_id)
     return success_response(message="Scenario saved", data=ScenarioBody(scenario=text))
+
+
+class SourceDocumentBody(BaseModel):
+    document: dict = Field(description="The complete edited source document, as returned in `source_document`.")
+
+
+@router.put(
+    "/{conversation_id}/source-document",
+    response_model=SuccessResponse[CallDetail],
+    summary="Edit a call's raw source document",
+    description="""Applies an edited copy of the call's `source_document` to its document in the project's report
+collection. Only changed keys are written (`$set`), keys removed from the payload are `$unset`, and
+`source_edited_by` / `source_edited_at` record who/when.
+
+**Guards:** `_id`, audit fields and withheld personal-data fields cannot be changed or removed (422), so a
+`[withheld]` marker can never overwrite real values.
+
+**Errors:** 403 without `report.annotate` or project access; 404 if the call isn't in the project; 422 for a
+forbidden edit.""",
+    responses=success_and_error_responses("Saved", _DETAIL_EXAMPLE, UNAUTHORIZED_EXAMPLE, FORBIDDEN_EXAMPLE, not_found_example("Call")),
+)
+async def set_call_source_document(
+    conversation_id: str = Path(..., description="The call's conversation identifier."),
+    project_id: str = Query(..., description="The project (Mongo ObjectId) this call belongs to."),
+    body: SourceDocumentBody = Body(...),
+    identity: IdentityContext = Depends(require_permission("report.annotate")),
+    source: ProjectCallSource = Depends(resolve_project_source),
+) -> dict:
+    ensure_project_access(identity, project_id)
+    call = await call_repo.get_by_conversation_id(
+        conversation_id,
+        project_id,
+        collection=source.collection,
+        adapter=source.adapter,
+        organization_id=source.organization_id,
+    )
+    if call is None:
+        raise NotFoundError("Call not found")
+    doc_id = (call._source_doc or {}).get("_id")
+    if doc_id is None:
+        raise NotFoundError("Call not found")
+    try:
+        to_set, to_unset = diff_source_document(call._source_doc, body.document)
+    except ValueError as exc:
+        raise UnprocessableEntityError(str(exc)) from exc
+    if to_set or to_unset:
+        update: dict = {
+            "$set": {**to_set, "source_edited_by": identity.user_id, "source_edited_at": datetime.now(timezone.utc)}
+        }
+        if to_unset:
+            update["$unset"] = {k: "" for k in to_unset}
+        try:
+            await source.collection.update_one({"_id": doc_id}, update)
+        except Exception as exc:
+            raise BadGatewayError("Unable to save to the report collection") from exc
+    fresh = await call_repo.get_by_conversation_id(
+        conversation_id,
+        project_id,
+        collection=source.collection,
+        adapter=source.adapter,
+        organization_id=source.organization_id,
+    )
+    ref = await resolve_recording_ref(source.collection, source.adapter, project_id, source.organization_id, conversation_id)
+    return success_response(message="Source document saved", data=_to_detail(fresh or call, recording_available=ref is not None))
 
 
 @router.get(

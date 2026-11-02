@@ -147,3 +147,34 @@ def serialize(doc: dict, schema: list[dict], include_other: bool = False) -> dic
         configured = {spec["key"] for spec in schema}
         out["other_fields"] = {str(k): _json_safe(v) for k, v in doc.items() if k != "_id" and k not in configured}
     return out
+
+
+def full_document(doc: dict) -> dict:
+    """Every key of the stored document (JSON-safe), `_id` included."""
+
+    return {str(k): _json_safe(v) for k, v in doc.items()}
+
+
+def diff_document(current: dict, edited: dict[str, Any], schema: list[dict]) -> tuple[dict[str, Any], list[str]]:
+    """Compares an edited full document against the stored one and returns
+    `(to_set, to_unset)`; only changed keys are returned so untouched BSON
+    types survive. Changed configured fields are validated/converted to their
+    declared type; other keys are stored as given JSON. `_id` cannot change."""
+
+    shown = full_document(current)
+    configured = {spec["key"] for spec in schema}
+    changed_configured: dict[str, Any] = {}
+    to_set: dict[str, Any] = {}
+    for key, value in edited.items():
+        if not isinstance(key, str) or not key or key.startswith("$") or "." in key:
+            raise UnprocessableEntityError("Invalid customer details", details={str(key): "invalid field name"})
+        if key in shown and shown[key] == value:
+            continue
+        if key == "_id":
+            raise UnprocessableEntityError("Invalid customer details", details={"_id": "cannot be edited"})
+        (changed_configured if key in configured else to_set)[key] = value
+    to_set.update(validate_fields(changed_configured, schema))
+    to_unset = [k for k in current if k not in edited]
+    if "_id" in to_unset:
+        raise UnprocessableEntityError("Invalid customer details", details={"_id": "cannot be removed"})
+    return to_set, to_unset

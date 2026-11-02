@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from reports_service.core.config import get_settings
 from reports_service.core.deps import ensure_project_access, require_permission
 from reports_service.core.users_client import IdentityContext, get_project_config
-from reports_service.customer_details.service import normalize_type, serialize, validate_fields
+from reports_service.customer_details.service import diff_document, full_document, normalize_type, serialize, validate_fields
 from reports_service.db.mongodb import get_client
 
 router = APIRouter(prefix="/customer-details", tags=["customer-details"])
@@ -31,6 +31,7 @@ class CustomerRecordOut(BaseModel):
     id: str = Field(description="Mongo `_id` of the record.")
     fields: dict = Field(description="Values keyed by the project's configured customer fields.")
     other_fields: dict = Field(default_factory=dict, description="Single-record view only: every other key in the stored document.")
+    document: dict | None = Field(default=None, description="Single-record view only: the complete stored document (JSON-safe, `_id` included).")
 
 
 class PaginatedCustomerRecords(BaseModel):
@@ -39,6 +40,10 @@ class PaginatedCustomerRecords(BaseModel):
     page: int
     page_size: int
     total: int
+
+
+class CustomerDocumentBody(BaseModel):
+    document: dict = Field(description="The complete edited document, as returned in `document`.")
 
 
 class CustomerRecordBody(BaseModel):
@@ -143,7 +148,9 @@ async def get_record(
     doc = await collection.find_one({"_id": _object_id(record_id)})
     if doc is None:
         raise NotFoundError("Record not found")
-    return success_response(data=serialize(doc, schema, include_other=True))
+    out = serialize(doc, schema, include_other=True)
+    out["document"] = full_document(doc)
+    return success_response(data=out)
 
 
 @router.patch(
@@ -171,6 +178,44 @@ async def update_record(
     if doc is None:
         raise NotFoundError("Record not found")
     return success_response(message="Record updated", data=serialize(doc, schema))
+
+
+@router.put(
+    "/{record_id}/document",
+    response_model=SuccessResponse[CustomerRecordOut],
+    summary="Edit a customer-details record's full raw document",
+    description="""Applies an edited copy of the whole stored document. Only changed keys are written; keys removed
+from the payload are unset. Changed configured fields are validated against their declared type; other keys are
+stored as given. `_id` cannot be changed or removed.
+
+**Errors:** 403 without `customer_detail.update`/project access; 404 if missing; 422 for an invalid edit.""",
+    responses=success_and_error_responses("Record updated", None, UNAUTHORIZED_EXAMPLE, FORBIDDEN_EXAMPLE),
+)
+async def update_document(
+    request: Request,
+    record_id: str = Path(...),
+    project_id: str = Query(..., description="The project (Mongo ObjectId)."),
+    body: CustomerDocumentBody = Body(...),
+    identity: IdentityContext = Depends(require_permission("customer_detail.update")),
+) -> dict:
+    ensure_project_access(identity, project_id)
+    collection, schema = await _resolve(request, project_id)
+    oid = _object_id(record_id)
+    current = await collection.find_one({"_id": oid})
+    if current is None:
+        raise NotFoundError("Record not found")
+    to_set, to_unset = diff_document(current, body.document, schema)
+    update: dict = {}
+    if to_set:
+        update["$set"] = to_set
+    if to_unset:
+        update["$unset"] = {k: "" for k in to_unset}
+    doc = (
+        await collection.find_one_and_update({"_id": oid}, update, return_document=True) if update else current
+    )
+    out = serialize(doc, schema, include_other=True)
+    out["document"] = full_document(doc)
+    return success_response(message="Record updated", data=out)
 
 
 @router.delete(
