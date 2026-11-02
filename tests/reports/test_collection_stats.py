@@ -71,13 +71,13 @@ async def test_calls_list_returns_field_mapper_columns_and_withholds_pii(app, cl
 
     assert body["columns"] == [
         {"key": "lang", "raw_field": "language", "restricted": False},
-        {"key": "phone_number", "raw_field": "customerPhone", "restricted": True},
+        {"key": "phone_number", "raw_field": "customerPhone", "restricted": False},
         {"key": "stage", "raw_field": "no_such_field", "restricted": False},
     ]
     assert body["items"][0]["fields"] == {"lang": "en-IN", "phone_number": None, "stage": None}
 
 
-async def test_call_detail_returns_full_source_document_with_pii_withheld(app, client):
+async def test_call_detail_returns_full_source_document_unmasked(app, client):
     from reports_service.calls.model import Call
 
     call = await make_call(PROJECT, ORG, conversation_id="detail-1")
@@ -93,5 +93,5 @@ async def test_call_detail_returns_full_source_document_with_pii_withheld(app, c
     assert doc["conversation_id"] == "detail-1"
     assert doc["stage"] == "S1"
     assert doc["extra"] == {"a": [1, 2]}
-    assert doc["customerPhone"] == "[withheld: personal data]"
-    assert "+910000000000" not in resp.text
+    assert doc["customerPhone"] != "[withheld: personal data]"
+    assert doc["customerPhone"] == "+910000000000"

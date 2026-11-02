@@ -71,7 +71,7 @@ class CallDetail(CallListItem):
     raw: dict = Field(description="Project-specific operational detail not modeled as typed fields above (e.g. conversation transcript, event timeline). PII fields, if any, have already been stripped by the source's schema adapter before this response is built.")
     source_document: dict = Field(
         default_factory=dict,
-        description="The call's full source Mongo document (all top-level fields). Personal-data fields keep their key but their value is withheld.",
+        description="The call's full source Mongo document (all top-level fields).",
     )
     recording_available: bool = Field(
         description="Whether `GET /calls/{conversation_id}/recording` has a recording to serve for this call — "

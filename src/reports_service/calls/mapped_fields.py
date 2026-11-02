@@ -14,32 +14,11 @@ from typing import Any
 
 from bson import ObjectId
 
-_PII_RAW_FIELDS = {
-    "phone",
-    "phone_number",
-    "phonenumber",
-    "customerphone",
-    "srcphone",
-    "dstphone",
-    "mobile",
-    "rec_path",
-    "recording_url",
-    "full_name",
-    "name",
-    "customer_name",
-    "customername",
-    "email",
-    "aadhaar",
-    "pan",
-    "dob",
-    "condition",
-    "city",
-    "address",
-    "customercrtid",
-    "user_context",
-    "call_infra",
-    "conversation_log",
-}
+# Product decision (2026-11-02): no source field is withheld any more — the call
+# list columns and the detail/raw-JSON views return every value to users who
+# already hold `report.view` for the project. Re-add field names here to
+# restore masking for them (keys lower-cased).
+_PII_RAW_FIELDS: set[str] = set()
 
 
 def is_restricted(raw_field: str) -> bool:
