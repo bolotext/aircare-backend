@@ -568,3 +568,145 @@ async def test_startup_backfills_call_date_for_older_records(app, client):
     await records_collection().insert_one({"aircare_project_id": PROJECT, "project_id": "old", "customerCRTId": "x", "tempDate": "05/06/2026"})
     await ensure_indexes()
     assert (await records_collection().find_one({"customerCRTId": "x"}))["call_date"] == "2026-06-05"
+
+
+# ------------------------------------------------------------------ chunked big-file upload
+@pytest.fixture()
+def upload_dir(tmp_path, monkeypatch):
+    from reports_service.auto_scam import uploads
+
+    monkeypatch.setattr(uploads, "UPLOAD_DIR", tmp_path / "uploads")
+    return tmp_path / "uploads"
+
+
+async def _chunked(client, name, payload: bytes, chunk=7, overwrite=False, finish=True):
+    """Upload `payload` in tiny chunks (so boundaries fall mid-object and mid-character) and wait for processing."""
+    start = await client.post(f"{BASE}/uploads", json={**P, "file_name": name, "size": len(payload), "overwrite": overwrite})
+    if start.json()["code"] != 201:
+        return start.json(), None
+    uid = _unwrap(start)["upload_id"]
+    for off in range(0, len(payload), chunk):
+        r = await client.put(f"{BASE}/uploads/{uid}/chunk", params={"offset": off}, content=payload[off : off + chunk],
+                             headers={"Content-Type": "application/octet-stream"})
+        assert r.json()["code"] == 200, r.json()
+    if not finish:
+        return None, uid
+    assert (await client.post(f"{BASE}/uploads/{uid}/finish")).json()["code"] == 202
+    for _ in range(300):
+        st = _unwrap(await client.get(f"{BASE}/uploads/{uid}"))
+        if st["status"] not in ("receiving", "processing"):
+            return st, uid
+        await asyncio.sleep(0.05)
+    raise AssertionError(st)
+
+
+async def test_chunked_upload_parses_across_chunk_boundaries(app, client, upload_dir):
+    from reports_service.auto_scam.uploads import _Parser  # noqa: F401
+
+    _perms(app, "auto_scam.view", "auto_scam.manage")
+    payload = SAMPLE.encode("utf-8")  # Tamil text: 3-byte characters get split by the 7-byte chunks
+    st, uid = await _chunked(client, "big", payload, chunk=7)
+    assert st["status"] == "done" and st["records"] == 1 and st["received"] == st["size"] == len(payload)
+    assert st["processed_bytes"] == len(payload)
+    rec_id = _unwrap(await client.get(f"{BASE}/datasets/big/records", params=P))["items"][0]["id"]
+    rec = _unwrap(await client.get(f"{BASE}/records/{rec_id}"))
+    assert rec["conversation_log"][1]["content"] == "ஆம்" and rec["source_id"] == "6ae8b6994f6ebabc318ed040"
+    assert rec["customerCRTId"] == "47c7c1ac-a100-4396-8953-a052ced333ae"
+    ds = _unwrap(await client.get(f"{BASE}/datasets", params=P))
+    assert [(d["file_name"], d["records"]) for d in ds] == [("big", 1)]
+    assert not (upload_dir / f"{uid}.part").exists()  # temp file cleaned up
+    assert await records_collection().count_documents({"project_id": {"$regex": "^__upload__"}}) == 0
+
+
+async def test_chunked_upload_handles_many_records_jsonl_and_single_object(app, client, upload_dir):
+    _perms(app, "auto_scam.view", "auto_scam.manage")
+    many = json.dumps([{"customerCRTId": f"c{i}", "STAGE_CODE": "S", "tempDate": "26/10/2026", "conversation_log": [{"role": "user", "content": "é"}]}
+                       for i in range(2500)], ensure_ascii=False, indent=1).encode()
+    st, _ = await _chunked(client, "many", many, chunk=4096)  # > one insert batch, many block boundaries
+    assert st["status"] == "done" and st["records"] == 2500
+    assert _unwrap(await client.get(f"{BASE}/datasets/many/records", params={**P, "date_from": "2026-10-26"}))["total"] == 2500
+
+    lines = "\n".join(json.dumps({"customerCRTId": f"l{i}", "conversation_log": []}) for i in range(5)).encode()
+    st, _ = await _chunked(client, "lines", lines, chunk=13)
+    assert (st["status"], st["records"]) == ("done", 5)
+    one = json.dumps({"customerCRTId": "solo", "conversation_log": []}).encode()
+    st, _ = await _chunked(client, "solo", one, chunk=5)
+    assert (st["status"], st["records"]) == ("done", 1)
+
+
+async def test_chunked_upload_rejects_bad_files_and_keeps_existing_data(app, client, upload_dir):
+    _perms(app, "auto_scam.view", "auto_scam.manage")
+    good = json.dumps([{"customerCRTId": "keep", "conversation_log": []}]).encode()
+    assert (await _chunked(client, "ds", good))[0]["status"] == "done"
+
+    for label, bad in [
+        ("truncated", b'[{"customerCRTId": "a", "conversation_log": []}, {"customerCRTId": "b"'),
+        ("not objects", b"[1, 2, 3]"),
+        ("empty array", b"[]"),
+        ("garbage", b"{not json at all"),
+        ("bad utf8", b'[{"customerCRTId": "\xff\xfe"}]'),
+    ]:
+        st, uid = await _chunked(client, "ds", bad, overwrite=True)
+        assert st["status"] == "failed" and st["error"], label
+        assert not (upload_dir / f"{uid}.part").exists(), label
+        # the previous dataset is untouched and no staging rows remain
+        assert [i["customerCRTId"] for i in _unwrap(await client.get(f"{BASE}/datasets/ds/records", params=P))["items"]] == ["keep"], label
+        assert await records_collection().count_documents({"project_id": {"$regex": "^__upload__"}}) == 0, label
+
+    # overwrite replaces it only when the new file is good
+    new = json.dumps([{"customerCRTId": "new1", "conversation_log": []}, {"customerCRTId": "new2", "conversation_log": []}]).encode()
+    st, _ = await _chunked(client, "ds", new, overwrite=True)
+    assert st["status"] == "done"
+    assert sorted(i["customerCRTId"] for i in _unwrap(await client.get(f"{BASE}/datasets/ds/records", params=P))["items"]) == ["new1", "new2"]
+
+
+async def test_chunked_upload_protocol_guards(app, client, upload_dir):
+    _perms(app, "auto_scam.view", "auto_scam.manage")
+    payload = json.dumps([{"customerCRTId": "a", "conversation_log": []}]).encode()
+    await _chunked(client, "exists", payload)
+    # a duplicate name is refused up front, before any data is sent
+    refused, _ = await _chunked(client, "exists", payload)
+    assert refused["code"] == 409
+    assert (await client.post(f"{BASE}/uploads", json={**P, "file_name": "../x", "size": 10})).json()["code"] == 400
+    assert (await client.post(f"{BASE}/uploads", json={**P, "file_name": "huge", "size": 10 * 1024**3})).json()["code"] == 400
+
+    start = _unwrap(await client.post(f"{BASE}/uploads", json={**P, "file_name": "g", "size": len(payload)}))
+    uid = start["upload_id"]
+    hdr = {"Content-Type": "application/octet-stream"}
+    assert (await client.post(f"{BASE}/uploads", json={**P, "file_name": "g", "size": 5})).json()["code"] == 409  # already uploading
+    gap = await client.put(f"{BASE}/uploads/{uid}/chunk", params={"offset": 5}, content=payload[5:], headers=hdr)
+    assert gap.json()["code"] == 409  # chunk would leave a hole
+    over = await client.put(f"{BASE}/uploads/{uid}/chunk", params={"offset": 0}, content=payload + b"x", headers=hdr)
+    assert over.json()["code"] == 400
+    assert (await client.post(f"{BASE}/uploads/{uid}/finish")).json()["code"] == 409  # nothing received yet
+    half = len(payload) // 2
+    await client.put(f"{BASE}/uploads/{uid}/chunk", params={"offset": 0}, content=payload[:half], headers=hdr)
+    await client.put(f"{BASE}/uploads/{uid}/chunk", params={"offset": 0}, content=payload[:half], headers=hdr)  # retry is safe
+    assert _unwrap(await client.get(f"{BASE}/uploads/{uid}"))["received"] == half
+    assert (await client.post(f"{BASE}/uploads/{uid}/finish")).json()["code"] == 409  # incomplete
+    # cancel discards everything
+    assert (await client.delete(f"{BASE}/uploads/{uid}")).json()["code"] == 200
+    assert _unwrap(await client.get(f"{BASE}/uploads/{uid}"))["status"] == "cancelled"
+    assert not any(upload_dir.glob("*.part")) or all(p.stem != uid for p in upload_dir.glob("*.part"))
+    assert (await client.put(f"{BASE}/uploads/{uid}/chunk", params={"offset": half}, content=payload[half:], headers=hdr)).json()["code"] == 409
+    # permissions + project isolation
+    _perms(app, "auto_scam.view")
+    assert (await client.post(f"{BASE}/uploads", json={**P, "file_name": "z", "size": 10})).json()["code"] == 403
+
+
+async def test_stale_uploads_are_swept(app, client, upload_dir):
+    from datetime import timedelta
+
+    from reports_service.auto_scam.model import AutoScamUpload, utcnow
+    from reports_service.auto_scam.uploads import sweep_uploads
+
+    _perms(app, "auto_scam.view", "auto_scam.manage")
+    st, uid = await _chunked(client, "abandoned", b'[{"customerCRTId": "a", "conversation_log": []}]', finish=False)
+    up = await AutoScamUpload.get(PydanticObjectId(uid))
+    await sweep_uploads()
+    assert (await AutoScamUpload.get(up.id)).status == "receiving"  # fresh: left alone
+    up.heartbeat_at = utcnow() - timedelta(hours=7)
+    await up.save()
+    await sweep_uploads()
+    swept = await AutoScamUpload.get(up.id)
+    assert swept.status == "failed" and not (upload_dir / f"{uid}.part").exists()

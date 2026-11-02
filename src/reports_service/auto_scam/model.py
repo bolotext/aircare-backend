@@ -9,6 +9,7 @@ Collections
                        A run skips conversations that already have a successful row here.
 - `auto_scam_datasets` one per uploaded file: its analytics settings and last run.
 - `auto_scam_runs`     run status, progress and the log tail.
+- `auto_scam_uploads`  chunked big-file uploads in flight (progress, status); the data itself lands in `auto_scam`.
 """
 
 from datetime import datetime, timezone
@@ -131,3 +132,27 @@ class AutoScamResult(Document):
             IndexModel([("aircare_project_id", 1), ("file_name", 1), ("customer_crt_id", 1)], unique=True),
             IndexModel([("customer_crt_id", 1)]),
         ]
+
+
+class AutoScamUpload(Document):
+    """A large file being uploaded in chunks. Chunks are appended to a temp file; once complete it is parsed in
+    blocks (bounded memory) into `auto_scam`, with progress reported here."""
+
+    aircare_project_id: PydanticObjectId
+    file_name: str
+    overwrite: bool = False
+    size: int
+    received: int = 0
+    status: str = "receiving"  # receiving | processing | done | failed | cancelled
+    processed_bytes: int = 0
+    records: int = 0
+    error: str | None = None
+    path: str
+    created_by: str
+    created_at: datetime = Field(default_factory=utcnow)
+    heartbeat_at: datetime = Field(default_factory=utcnow)
+    finished_at: datetime | None = None
+
+    class Settings:
+        name = "auto_scam_uploads"
+        indexes = [IndexModel([("aircare_project_id", 1), ("created_at", -1)])]
