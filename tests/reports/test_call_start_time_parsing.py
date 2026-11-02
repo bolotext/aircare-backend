@@ -44,3 +44,18 @@ def test_journey_entry_uses_the_sources_own_call_start_time():
         }
     )
     assert build_entry(call, doc)["call_start_time"] == "2026-10-26T11:31:19"
+
+
+def test_journey_issue_messages_explain_queued_post_call():
+    from reports_service.calls.journey import annotate
+
+    def e(cid, start, seq, trigger, stage=None):
+        return {"conversation_id": cid, "call_start_time": start, "sequence_number": seq, "trigger_call": trigger,
+                "stage_code": stage, "next_trigger_date": None, "day": None, "attempt_today": None,
+                "max_trigger_today": None, "issues": [], "scheduled_for": None, "seconds_vs_schedule": None}
+
+    entries = [e("a", "2026-10-26T10:00:00", 4, False, "APPOINTMENT_INTERESTED"), e("b", "2026-10-26T10:30:00", 4, True)]
+    annotate(entries)
+    by_code = {i["code"]: i["message"] for i in entries[1]["issues"]}
+    assert "queued" in by_code["duplicate_sequence_number"] and "RNR window" in by_code["duplicate_sequence_number"]
+    assert "INTERESTED" in by_code["called_after_stop"] and "queued" in by_code["called_after_stop"]

@@ -182,9 +182,12 @@ def annotate(entries: list[dict]) -> None:
                     "duplicate_sequence_number",
                     "error",
                     f"sequence_number {seq} is also on {len(others)} other call(s) ({', '.join(others)}). "
-                    "Two triggers were fired from the same contact state — possible causes: the scheduler "
-                    "picked the contact up twice (overlapping runs / retry race), or the contact record "
-                    "was not updated before the next trigger.",
+                    "Likely cause: post-call processing for the earlier call was still queued, so its "
+                    "sequence_number and next_trigger_date were not updated yet, and the call scheduler "
+                    "picked the same contact up again in its next ~30-minute window. "
+                    "Suggested guard: store the phone number with its sequence_number and, if the same "
+                    "phone + sequence_number was already called within the RNR window (~2 hours), "
+                    "reject the call with an error instead of placing it.",
                 )
             )
 
@@ -218,11 +221,22 @@ def annotate(entries: list[dict]) -> None:
                     )
 
             if prev["trigger_call"] is False:
+                same_seq = seq is not None and seq == prev["sequence_number"]
+                stage = str(prev.get("stage_code") or "")
+                interested = "INTERESTED" in stage.upper()
+                tagged = f" (stage {stage})" if interested else ""
+                reason = (
+                    "Likely cause: the call was queued — post-call processing had not finished when the "
+                    "scheduler ran, so the contact still looked callable"
+                    + (" (same sequence_number as the previous call confirms the record was not updated in time)" if same_seq else "")
+                    + ". It was marked trigger_call=false afterwards, but the call had already been triggered."
+                )
                 issues.append(
                     _issue(
                         "called_after_stop",
                         "error",
-                        "The previous call recorded trigger_call=false (do not call again), but this call was placed.",
+                        f"The previous call was marked trigger_call=false{tagged} (do not call again), but "
+                        f"this call was still placed. {reason}",
                     )
                 )
 
