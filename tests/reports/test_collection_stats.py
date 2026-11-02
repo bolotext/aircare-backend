@@ -95,3 +95,18 @@ async def test_call_detail_returns_full_source_document_unmasked(app, client):
     assert doc["extra"] == {"a": [1, 2]}
     assert doc["customerPhone"] != "[withheld: personal data]"
     assert doc["customerPhone"] == "+910000000000"
+
+
+async def test_bulk_source_documents_in_requested_order(app, client):
+    await make_call(PROJECT, ORG, conversation_id="b-1")
+    await make_call(PROJECT, ORG, conversation_id="b-2")
+    app.dependency_overrides[get_current_identity] = lambda: make_identity("ADMIN")
+
+    resp = await client.post(
+        "/api/v1/calls/source-documents",
+        params={"project_id": str(PROJECT)},
+        json={"conversation_ids": ["b-2", "missing", "b-1"]},
+    )
+    docs = resp.json()["data"]
+
+    assert [d["conversation_id"] for d in docs] == ["b-2", "b-1"]

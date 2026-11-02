@@ -303,6 +303,44 @@ async def lookup_calls(
     )
 
 
+MAX_BULK_SOURCE_DOCUMENTS = 5000
+
+
+class SourceDocumentsBody(BaseModel):
+    conversation_ids: list[str] = Field(
+        min_length=1, max_length=MAX_BULK_SOURCE_DOCUMENTS, description="Conversation ids to fetch, in order."
+    )
+
+
+@router.post(
+    "/source-documents",
+    response_model=SuccessResponse[list[dict]],
+    summary="Fetch the full source documents of many calls",
+    description=f"""Returns each requested call's complete `source_document`, in the order requested; ids that don't
+exist are skipped. At most {MAX_BULK_SOURCE_DOCUMENTS} ids per request.
+
+**When to use:** the Conversation Logs "Show raw JSON" list for a large selection.
+
+**Errors:** 403 without `report.view`/project access; 422 over {MAX_BULK_SOURCE_DOCUMENTS} ids.""",
+    responses=success_and_error_responses("The documents", [], UNAUTHORIZED_EXAMPLE, FORBIDDEN_EXAMPLE),
+)
+async def bulk_source_documents(
+    project_id: str = Query(..., description="The project (Mongo ObjectId) the calls belong to."),
+    body: SourceDocumentsBody = Body(...),
+    identity: IdentityContext = Depends(require_permission("report.view")),
+    source: ProjectCallSource = Depends(resolve_project_source),
+) -> dict:
+    ensure_project_access(identity, project_id)
+    calls = await call_repo.get_many_by_conversation_ids(
+        list(dict.fromkeys(body.conversation_ids)),
+        project_id,
+        collection=source.collection,
+        adapter=source.adapter,
+        organization_id=source.organization_id,
+    )
+    return success_response(data=[source_document(c._source_doc) for c in calls])
+
+
 class ScenarioBody(BaseModel):
     scenario: str = Field(max_length=500, description="The scenario text; an empty string clears it.")
 
