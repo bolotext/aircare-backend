@@ -3,28 +3,28 @@
 # Everything is one app on :45461, configured by ./.env (see src/common/env.py).
 
 install:
-	python -m pip install -r requirements-dev.txt
+	uv sync
 
 test:
-	python -m pytest
+	uv run pytest
 
 run:
 	@echo 'Backend on :45461 with --reload (dev only; needs a reachable MongoDB, see .env)'
-	python src/main.py serve --reload
+	uv run python src/main.py serve --reload
 
 run-prod:
 	@echo 'Backend on :45461 with 2 worker processes, no reload'
-	python src/main.py serve --workers 2
+	uv run python src/main.py serve --workers 2
 
 seed:
-	python src/main.py seed
+	uv run python src/main.py seed
 
 seed-demo:
-	python src/main.py seed-demo
+	uv run python src/main.py seed-demo
 
 schedule:
 	@echo 'Daily automailer loop (separate process; needs MongoDB + the mail relay, see .env)'
-	python src/main.py schedule
+	uv run python src/main.py schedule
 
 docker-build:
 	docker compose build

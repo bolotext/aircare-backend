@@ -32,6 +32,7 @@ from reports_service.patient_calls.router import router as patient_calls_router
 from reports_service.patients.router import router as patients_router
 from reports_service.reports.router import router as reports_router
 from reports_service.risk_thresholds.router import router as risk_thresholds_router
+from reports_service.s3_storage.router import router as s3_router
 from users_service.auth.router import internal_router as auth_internal_router
 from users_service.auth.router import router as auth_router
 from users_service.core.config import get_settings
@@ -79,6 +80,7 @@ _TAGS_METADATA = [
     {"name": "customer-details", "description": "CRUD for a project's customer-details records (personal data)."},
     {"name": "patient-calls", "description": "CRUD for AQI-triggered patient advisory calls."},
     {"name": "risk-thresholds", "description": "Admin-only CRUD for the condition -> AQI risk-threshold reference table."},
+    {"name": "s3", "description": "Per-project S3 connection (credentials stored encrypted) and a browser for the bucket's contents."},
     {"name": "internal", "description": "Used only by this app itself — gated by `X-Internal-Api-Key`."},
     {"name": "health", "description": "Service liveness check."},
 ]
@@ -160,6 +162,7 @@ def create_app() -> FastAPI:
         customer_details_router,
         patient_calls_router,
         risk_thresholds_router,
+        s3_router,
     ):
         app.include_router(router, prefix=api_v1)
 

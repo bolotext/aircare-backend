@@ -1,5 +1,35 @@
-[tool.uv.workspace]
-members = ["libs/*", "services/*"]
+[project]
+name = "aircare-backend"
+version = "1.0.0"
+description = "Aircare / Manappuram backend: users (auth/RBAC/tenancy) + reports in one FastAPI app."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.7.0",
+    "motor>=3.6.0",
+    "beanie>=1.29.0",
+    "pyjwt>=2.10.0",
+    "bcrypt>=4.2.0",
+    "email-validator>=2.2.0",
+    "slowapi>=0.1.9",
+    "httpx>=0.28.0",
+    "jinja2>=3.1.0",
+    "openpyxl>=3.1.0",
+    "colorlog>=6.9.0",
+    "boto3>=1.35.0",
+    "cryptography>=43.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.25.0",
+    "mongomock-motor>=0.0.35",
+]
 
 [tool.uv]
+# An application, not a library: install the dependencies, not the project itself.
 package = false
+default-groups = ["dev"]

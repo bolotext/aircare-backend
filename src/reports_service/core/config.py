@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     prod_import_base_url: str = ""
     prod_import_timeout_seconds: float = 20.0
 
+    # Optional Fernet key. When set, newly saved S3 credentials are encrypted
+    # (see s3_storage/crypto.py); when empty they are stored as given. Generate:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    s3_credentials_encryption_key: str = ""
+
     # Daily send time, Asia/Kolkata hour-of-day (0-23).
     report_send_hour_ist: int = 6
     # How often the scheduler loop wakes up to check whether it's time to

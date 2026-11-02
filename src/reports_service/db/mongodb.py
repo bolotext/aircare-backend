@@ -7,6 +7,7 @@ from reports_service.patient_calls.model import PatientCall
 from reports_service.patients.model import Patient
 from reports_service.reports.model import ReportRecipient, ReportRun
 from reports_service.risk_thresholds.model import RiskThreshold
+from reports_service.s3_storage.model import S3Config
 from reports_service.scenarios.model import ScenarioRun
 
 if not hasattr(AsyncIOMotorClient, "_dummay_append_metadata_patched"):
@@ -42,7 +43,7 @@ async def init_db(client: AsyncIOMotorClient | None = None) -> None:
     _client = active_client
     await init_beanie(
         database=active_client[settings.mongo_db_name],
-        document_models=[Call, ScenarioRun, ReportRun, ReportRecipient, Patient, RiskThreshold, PatientCall],
+        document_models=[Call, ScenarioRun, ReportRun, ReportRecipient, Patient, RiskThreshold, PatientCall, S3Config],
     )
 
 

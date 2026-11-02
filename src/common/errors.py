@@ -62,6 +62,11 @@ class BadGatewayError(AppError):
         super().__init__("BAD_GATEWAY", message, status.HTTP_502_BAD_GATEWAY, details)
 
 
+class ServiceUnavailableError(AppError):
+    def __init__(self, message: str = "Service unavailable", details: dict | None = None):
+        super().__init__("SERVICE_UNAVAILABLE", message, status.HTTP_503_SERVICE_UNAVAILABLE, details)
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """Every error response uses the same envelope as success responses
     (see common.responses): {status, code, message, errors}. `code` is the

@@ -33,7 +33,7 @@ Permission keys per role: `src/users_service/db/seed.py`.
 
 ```bash
 cp .env.example .env            # then fill in the secrets (JWT_SECRET, INTERNAL_API_KEY, MONGO_URI, ...)
-make install                     # pip install -r requirements-dev.txt
+make install                     # uv sync  (dependencies live in pyproject.toml / uv.lock)
 
 make seed                        # roles/permissions + bootstrap Admin
 make seed-demo                   # demo org, 2 projects, a Supervisor and a Viewer (prints the ids)

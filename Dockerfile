@@ -1,15 +1,21 @@
 # Build context is aircare_backend/:  docker build -t manappuram_backend .
 FROM python:3.12-slim
 
+# uv resolves/installs from pyproject.toml + uv.lock (no requirements.txt).
+COPY --from=ghcr.io/astral-sh/uv:0.12.13 /uv /uvx /bin/
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_NO_CACHE=1 \
+    PATH="/app/.venv/bin:$PATH"
 
 WORKDIR /app
 
-# Dependencies first (cache-friendly layer).
-COPY requirements.txt ./
-RUN pip install -r requirements.txt
+# Dependencies first (cache-friendly layer): exactly what uv.lock pins, no dev group.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
 
 COPY src ./src
 

@@ -10,7 +10,6 @@ tests
 docs
 libs
 pytest.ini
-requirements-dev.txt
 Makefile
 README.md
 Dockerfile

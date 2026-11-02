@@ -63,6 +63,7 @@ ROLE_PERMISSIONS: dict[Role, list[str]] = {
         "customer_detail.create",
         "customer_detail.update",
         "customer_detail.delete",
+        "s3.view",
     ],
     Role.VIEWER: ["project.view", "report.view", "patient.view", "patient_call.view"],
 }
@@ -102,6 +103,9 @@ PERMISSION_DESCRIPTIONS: dict[str, str] = {
     "customer_detail.update": "Update a customer-details record.",
     "customer_detail.delete": "Delete a customer-details record.",
     "customer_detail.*": "All customer-details permissions.",
+    "s3.view": "Browse and read objects in a project's configured S3 bucket (scoped to assigned projects).",
+    "s3.configure": "Set or remove a project's S3 credentials (access key, secret, region, bucket). Admin only.",
+    "s3.*": "All S3 permissions.",
     "risk_threshold.view": "View the condition -> AQI risk-threshold reference table (Admin only).",
     "risk_threshold.manage": "Create, update, or delete condition risk thresholds (Admin only).",
     "risk_threshold.*": "All risk-threshold permissions.",
