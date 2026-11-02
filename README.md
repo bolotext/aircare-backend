@@ -27,7 +27,7 @@ Reports resolves identity/project config from the Users module in-process (no ne
 (previous vs updated stage code / lead score); a run **skips conversations that already have a successful result**
 unless "Re-analyse already analysed" is ticked, and editing a conversation clears its result. Collections: `auto_scam`,
 `auto_scam_results`, `auto_scam_datasets` (settings + prompt), `auto_scam_runs`. The Azure OpenAI credentials
-(`AZURE_OPENAI_*`) go in this `.env`. Post-processing logic (STAGE_CODE / setupTime / … → INTEREST_CLASSIFICATION, DISPOSITION) is a rule list edited in the Settings tab. New permissions `auto_scam.view|manage|run` — re-run `make seed`.
+(`AZURE_OPENAI_*`) go in this `.env`. Big files (hundreds of MB) upload in 8 MB chunks with a progress bar (`auto_scam/uploads.py`) and are parsed server-side in 1 MB blocks (~70 MB RAM), staged and swapped in only if the whole file parses. Post-processing logic (STAGE_CODE / setupTime / … → INTEREST_CLASSIFICATION, DISPOSITION) is a rule list edited in the Settings tab. New permissions `auto_scam.view|manage|run` — re-run `make seed`.
 
 ## Roles & permissions
 
