@@ -1,6 +1,6 @@
 .PHONY: install test run run-prod seed seed-demo schedule docker-build docker-up docker-down docker-restart
 
-# Everything is one app on :8000, configured by ./.env (see src/common/env.py).
+# Everything is one app on :45461, configured by ./.env (see src/common/env.py).
 
 install:
 	python -m pip install -r requirements-dev.txt
@@ -9,11 +9,11 @@ test:
 	python -m pytest
 
 run:
-	@echo 'Backend on :8000 with --reload (dev only; needs a reachable MongoDB, see .env)'
+	@echo 'Backend on :45461 with --reload (dev only; needs a reachable MongoDB, see .env)'
 	python src/main.py serve --reload
 
 run-prod:
-	@echo 'Backend on :8000 with 2 worker processes, no reload'
+	@echo 'Backend on :45461 with 2 worker processes, no reload'
 	python src/main.py serve --workers 2
 
 seed:
@@ -30,7 +30,7 @@ docker-build:
 	docker compose build
 
 docker-up:
-	@echo 'Starting the backend on :8000 (add --profile scheduler for the automailer: docker compose --profile scheduler up -d)'
+	@echo 'Starting the backend on :45461 (add --profile scheduler for the automailer: docker compose --profile scheduler up -d)'
 	docker compose up -d
 
 docker-down:
