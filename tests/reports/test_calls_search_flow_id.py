@@ -52,3 +52,39 @@ async def test_search_matches_flow_id_on_raw_source_documents(app, client):
     resp = await client.get("/api/v1/calls", params={"project_id": str(PROJECT), "search": "bbb222"})
 
     assert _ids(resp) == ["c-2"]
+
+
+async def test_search_matches_phone_number_on_raw_source_documents(app, client):
+    collection = AsyncMongoMockClient()["aircare"]["call_logs"]
+    base = {
+        "call_status": "ANSWERED",
+        "callStartTime": "ISODate(2026-09-25T09:37:55+00:00)",
+        "tempDate": "25/09/2026",
+    }
+    await collection.insert_many(
+        [
+            {**base, "_id": 1, "conversation_id": "c-1", "call_uid": "c-1", "customerPhone": "+919876543210"},
+            {**base, "_id": 2, "conversation_id": "c-2", "call_uid": "c-2", "customerPhone": "+911111111111"},
+        ]
+    )
+    app.dependency_overrides[resolve_project_source] = lambda: ProjectCallSource(
+        collection=collection, organization_id=str(ORG), adapter=normalize_call_logs
+    )
+    app.dependency_overrides[get_current_identity] = lambda: make_identity("ADMIN")
+
+    resp = await client.get("/api/v1/calls", params={"project_id": str(PROJECT), "search": "98765"})
+
+    assert _ids(resp) == ["c-1"]
+
+
+async def test_search_matches_phone_number_on_native_calls(app, client):
+    from reports_service.calls.model import Call
+
+    await make_call(PROJECT, ORG, conversation_id="n-1")
+    await make_call(PROJECT, ORG, conversation_id="n-2")
+    await Call.get_pymongo_collection().update_one({"conversation_id": "n-2"}, {"$set": {"phone": "+912222233333"}})
+    app.dependency_overrides[get_current_identity] = lambda: make_identity("ADMIN")
+
+    resp = await client.get("/api/v1/calls", params={"project_id": str(PROJECT), "search": "22222"})
+
+    assert _ids(resp) == ["n-2"]

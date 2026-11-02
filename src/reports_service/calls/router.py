@@ -101,7 +101,7 @@ async def list_calls(
     ),
     call_status: str | None = Query(default=None, description="Exact-match call status filter, e.g. `ANSWERED`.", examples=["ANSWERED"]),
     search: str | None = Query(
-        default=None, max_length=100, description="Case-insensitive substring match on conversation_id or flow_id.", examples=["17930", "prod-e3fbb647899d"]
+        default=None, max_length=100, description="Case-insensitive substring match on conversation_id, flow_id or customer phone number.", examples=["17930", "prod-e3fbb647899d"]
     ),
     flow_id: str | None = Query(default=None, max_length=100, description="Exact-match flow_id filter.", examples=["prod-e3fbb647899d"]),
     page: int = Query(default=1, ge=1, description="1-indexed page number to return."),

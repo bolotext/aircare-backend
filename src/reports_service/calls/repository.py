@@ -51,6 +51,11 @@ def _to_naive_utc(value: datetime) -> datetime:
     return value
 
 
+# Source fields a phone-number search looks at (top-level keys of the stored
+# document; names vary by data source).
+PHONE_SEARCH_FIELDS = ("phone", "phone_number", "phoneNumber", "customerPhone", "srcPhone", "dstPhone", "mobile")
+
+
 def build_mongo_query(call_filter: CallFilter) -> dict:
     query: dict = {}
     if call_filter.project_ids is not None:
@@ -72,7 +77,12 @@ def build_mongo_query(call_filter: CallFilter) -> dict:
         query["flow_id"] = call_filter.flow_id
     if call_filter.search:
         pattern = {"$regex": re.escape(call_filter.search), "$options": "i"}
-        query["$or"] = [{"conversation_id": pattern}, {"flow_id": pattern}, {"bot_id": pattern}]
+        query["$or"] = [
+            {"conversation_id": pattern},
+            {"flow_id": pattern},
+            {"bot_id": pattern},
+            *({field: pattern} for field in PHONE_SEARCH_FIELDS),
+        ]
     return query
 
 
@@ -132,7 +142,9 @@ def matches_filter(call: Call, call_filter: CallFilter) -> bool:
     if call_filter.search:
         needle = call_filter.search.lower()
         flow_id = (call._source_doc or {}).get("flow_id")
-        haystacks = (call.conversation_id, call.bot_id, flow_id if isinstance(flow_id, str) else "")
+        source = call._source_doc or {}
+        phones = tuple(str(source[f]) for f in PHONE_SEARCH_FIELDS if source.get(f) is not None)
+        haystacks = (call.conversation_id, call.bot_id, flow_id if isinstance(flow_id, str) else "", *phones)
         if not any(needle in h.lower() for h in haystacks):
             return False
     return True
