@@ -72,23 +72,27 @@ def _to_float(value: object) -> float | None:
 _WRAPPED_ISODATE = re.compile(r"^ISODate\((.+)\)$")
 
 
-def _parse_wrapped_isodate(value: str | None) -> datetime | None:
-    """Source format: the literal string "ISODate(2026-09-25T09:37:55+00:00)"
-    — this collection's ingestion pipeline appears to have serialized a
-    Mongo shell `ISODate(...)` constructor call as text instead of storing a
-    real BSON date or the "YYYY/MM/DD HH:MM:SS +0000" string the other two
-    raw shapes use.
+def _parse_wrapped_isodate(value: object) -> datetime | None:
+    """Source formats: the literal string "ISODate(2026-09-25T09:37:55+00:00)"
+    — this collection's ingestion pipeline serialized a Mongo shell
+    `ISODate(...)` constructor call as text — or a plain ISO-8601 string such
+    as "2026-10-26T11:31:19Z". Always returns an aware datetime; a string with
+    no zone designator is read as UTC (Mongo's convention).
     """
 
-    if not value:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if not isinstance(value, str) or not value.strip():
         return None
-    match = _WRAPPED_ISODATE.match(value)
-    if match is None:
-        return None
+    text = value.strip()
+    match = _WRAPPED_ISODATE.match(text)
+    if match:
+        text = match.group(1)
     try:
-        return datetime.fromisoformat(match.group(1))
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:
         return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def normalize_report_llm(doc: dict, *, project_id: str, organization_id: str) -> dict:
@@ -309,7 +313,7 @@ def _is_call_logs_shape(doc: dict) -> bool:
     """
 
     call_start = doc.get("callStartTime")
-    return isinstance(call_start, str) and _WRAPPED_ISODATE.match(call_start) is not None
+    return isinstance(call_start, str) and _parse_wrapped_isodate(call_start) is not None
 
 
 # Order matters: each project's sample document is checked against these in
