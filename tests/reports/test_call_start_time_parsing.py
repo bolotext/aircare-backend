@@ -21,3 +21,26 @@ def test_wrapped_isodate_and_naive_utc():
 
 def test_shape_detected_for_plain_iso():
     assert _is_call_logs_shape(_doc("2026-10-26T11:31:19Z"))
+
+
+def test_journey_entry_uses_the_sources_own_call_start_time():
+    from reports_service.calls.journey import build_entry
+    from reports_service.calls.model import Call
+
+    doc = {"_id": 1, "conversation_id": "c", "callStartTime": "2026-10-26T11:31:19Z", "tempDate": "27/10/2026"}
+    # An adapter that fell back to tempDate (midnight UTC of the wrong day).
+    call = Call.model_validate(
+        {
+            "project_id": "6ab4ceafe9f5e5190f56b7f0",
+            "organization_id": "6ab4ceafe9f5e5190f56b7f0",
+            "conversation_id": "c",
+            "bot_id": "b",
+            "language": "hi",
+            "call_status": "ANSWERED",
+            "disposition": "X",
+            "call_start_time": datetime(2026, 10, 27, tzinfo=timezone.utc),
+            "tool_failure_count": 0,
+            "raw": {},
+        }
+    )
+    assert build_entry(call, doc)["call_start_time"] == "2026-10-26T11:31:19"

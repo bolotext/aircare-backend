@@ -125,7 +125,10 @@ def build_entry(call: Call, doc: dict) -> dict:
     mapping = doc.get("call_sequence_mapping")
     day = _latest_mapping_day(mapping)
     today = mapping.get(day) if day and isinstance(mapping.get(day), dict) else {}
-    start = _parse_dt(call.call_start_time)
+    # The source's own callStartTime is authoritative; the adapter's
+    # call_start_time can fall back to the (date-only) tempDate when a source
+    # format isn't recognised, which would show midnight UTC (05:30 IST).
+    start = _parse_dt(doc.get("callStartTime")) or _parse_dt(call.call_start_time)
     return {
         "conversation_id": call.conversation_id,
         "call_start_time": _iso(start),
