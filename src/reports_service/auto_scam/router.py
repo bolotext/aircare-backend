@@ -694,20 +694,9 @@ async def bulk_delete_results(
     return success_response(message="Deleted", data={"deleted": res.deleted_count if res else 0})
 
 
-@router.get("/datasets/{file_name}/results", summary="Per-conversation analytics plus the columns the field mapper shows")
-async def dataset_results(
-    file_name: str,
-    project_id: str = Query(...),
-    changed_only: bool = Query(False),
-    identity: IdentityContext = Depends(require_permission("auto_scam.view")),
-) -> dict:
-    """`fields` is the analytics JSON as stored. `mapped` holds the field mapper's columns (computed on read, so a
-    changed mapper applies at once). `changed` = a key the analytics share with the conversation has a new value."""
-    ensure_project_access(identity, project_id)
-    ds = await _dataset(project_id, file_name)
+async def _result_items(ds: AutoScamDataset, rows: list) -> list[dict]:
+    """The API rows for these results: analytics + the conversation fields the table needs + the field mapper's columns."""
     mapper = ds.config.field_mapper
-    rows = await AutoScamResult.find({"aircare_project_id": ds.aircare_project_id, "file_name": file_name}).sort("+_id").to_list()
-
     # only load the record fields that are needed: stage/disposition, mapped conversation columns, and the analytics' own keys
     wanted = {"STAGE_CODE", "DISPOSITION"}
     wanted |= {f["field"] for r in rows for f in r.fields}
@@ -728,8 +717,6 @@ async def dataset_results(
         analytics = {f["field"]: f["updated"] for f in r.fields}
         prev_stage, new_stage = stage_codes(analytics, rec)
         changed = bool(changed_fields(analytics, rec)) or new_stage != prev_stage
-        if changed_only and not changed:
-            continue
         items.append({
             "id": str(r.id), "run_id": r.run_id, "record_id": r.record_id, "customerCRTId": r.customer_crt_id,
             "disposition": rec.get("DISPOSITION"), "previous_stage_code": prev_stage, "updated_stage_code": new_stage,
@@ -739,4 +726,65 @@ async def dataset_results(
             # False for results saved before this was kept
             "llm_fields": r.llm_fields, "rule_trace": r.rule_trace, "rule_changed": bool(r.rule_trace), "rules_recorded": bool(r.llm_fields),
         })
-    return success_response(data={"columns": [m.model_dump() for m in mapper], "items": items})
+    return items
+
+
+RESULTS_MAX_LIMIT = 1000
+
+
+@router.get("/datasets/{file_name}/results", summary="Per-conversation analytics plus the columns the field mapper shows (paged)")
+async def dataset_results(
+    file_name: str,
+    project_id: str = Query(...),
+    changed_only: bool = Query(False),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=RESULTS_MAX_LIMIT),
+    identity: IdentityContext = Depends(require_permission("auto_scam.view")),
+) -> dict:
+    """One page (`skip`/`limit`, oldest first) of results; `total` is how many match. `fields` is the analytics JSON as
+    stored. `mapped` holds the field mapper's columns (computed on read, so a changed mapper applies at once). `changed` =
+    a key the analytics share with the conversation has a new value; it depends on the conversation, so `changed_only`
+    has to scan the file in chunks (only the requested page is kept and returned)."""
+    ensure_project_access(identity, project_id)
+    ds = await _dataset(project_id, file_name)
+    base = {"aircare_project_id": ds.aircare_project_id, "file_name": file_name}
+    if not changed_only:
+        total = await AutoScamResult.find(base).count()
+        rows = await AutoScamResult.find(base).sort("+_id").skip(skip).limit(limit).to_list()
+        items = await _result_items(ds, rows)
+    else:
+        total, items, chunk = 0, [], 2000
+        last_id = None
+        while True:
+            flt = {**base, "_id": {"$gt": last_id}} if last_id else base
+            rows = await AutoScamResult.find(flt).sort("+_id").limit(chunk).to_list()
+            if not rows:
+                break
+            last_id = rows[-1].id
+            for it in await _result_items(ds, rows):
+                if it["changed"]:
+                    if skip <= total < skip + limit:
+                        items.append(it)
+                    total += 1
+    return success_response(data={"columns": [m.model_dump() for m in ds.config.field_mapper], "items": items, "total": total})
+
+
+class ResultsByIdsBody(BaseModel):
+    project_id: str
+    result_ids: list[str] = Field(min_length=1, max_length=RESULTS_MAX_LIMIT)
+
+
+@router.post("/datasets/{file_name}/results/by-ids", summary="The rows for specific results (ticked across pages)")
+async def results_by_ids(
+    file_name: str, body: ResultsByIdsBody, identity: IdentityContext = Depends(require_permission("auto_scam.view"))
+) -> dict:
+    ensure_project_access(identity, body.project_id)
+    ds = await _dataset(body.project_id, file_name)
+    try:
+        oids = [PydanticObjectId(i) for i in body.result_ids]
+    except Exception:
+        raise BadRequestError("result id is not valid", {"field": "result_ids"})
+    rows = await AutoScamResult.find(
+        {"aircare_project_id": ds.aircare_project_id, "file_name": file_name, "_id": {"$in": oids}}
+    ).sort("+_id").to_list()
+    return success_response(data={"items": await _result_items(ds, rows)})
