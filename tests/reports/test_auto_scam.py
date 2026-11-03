@@ -594,7 +594,7 @@ async def test_filters_by_disposition_stage_class_and_date(app, client):
     assert (await ids(classifications=["COLD", "HOT"]))[0] == ["r1", "r3", "r4"]
     assert (await ids(stage_codes=["INTERESTED", "BUSY"], dispositions=["NEUTRAL"]))[0] == ["r2", "r4"]  # AND across filters
     assert (await ids(date_from="2026-10-27", date_to="2026-10-28"))[0] == ["r2", "r3"]
-    assert (await ids(date_from="2026-10-28"))[0] == ["r3", "r4"]  # r4's date comes from its first timestamp (2026-10-31)
+    assert (await ids(date_from="2026-10-28"))[0] == ["r3"]  # the date filter reads tempDate only: r4 has none (its message timestamp is not consulted)
     assert (await ids(date_to="2026-10-26"))[0] == ["r1"]  # undated r5 never matches a date filter
     assert (await ids(q="r2", dispositions=["NEUTRAL"]))[0] == ["r2"]
     assert (await ids(dispositions=["NOPE"]))[0] == []
@@ -635,7 +635,7 @@ async def test_bulk_actions_use_the_same_filters(app, client, fake_scam):
             break
         await asyncio.sleep(0.1)
     assert run["status"] == "succeeded" and run["filtered"] is True and "matching the filters" in run["log"]
-    assert sorted(c for c, _ in fake_scam["calls"]) == ["r2", "r4"]
+    assert sorted(c for c, _ in fake_scam["calls"]) == ["r2"]  # r4 has no tempDate, so the date filter excludes it
 
     r = await client.post(f"{BASE}/datasets/flt/records/bulk-delete", json={**P, "all_matching": True, "filters": {"stage_codes": ["BUSY"], "dispositions": ["NEUTRAL"]}})
     assert _unwrap(r)["deleted"] == 1  # only r4

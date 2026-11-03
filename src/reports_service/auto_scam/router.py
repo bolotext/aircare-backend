@@ -71,7 +71,7 @@ class RunBody(BaseModel):
     project_id: str
     force: bool = Field(False, description="Re-analyse conversations that already have a result (matched by customerCRTId).")
     # Optional subset (needs exactly one file): selected conversations, or every conversation matching `q`.
-    record_ids: list[str] = Field(default_factory=list, max_length=20000)
+    record_ids: list[str] = Field(default_factory=list, max_length=50000)
     all_matching: bool = Field(False, description="Run every conversation matching `filters` (the whole file if none).")
     filters: RecordFilters = Field(default_factory=RecordFilters)
     file_names: list[str] = Field(min_length=1, max_length=50)
@@ -434,13 +434,13 @@ async def _table_items(ds: AutoScamDataset, docs: list[dict]) -> list[dict]:
 
 
 MAX_TABLE_ROWS = 20_000
-MAX_NEXT_IDS = 20000
+MAX_NEXT_IDS = 50000
 
 
 class NextIdsBody(BaseModel):
     project_id: str
     filters: RecordFilters = Field(default_factory=RecordFilters)
-    exclude: list[str] = Field(default_factory=list, max_length=50000, description="Ids to skip (already selected).")
+    exclude: list[str] = Field(default_factory=list, max_length=100000, description="Ids to skip (already selected).")
     count: int = Field(ge=1, le=MAX_NEXT_IDS)
 
 

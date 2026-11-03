@@ -23,7 +23,7 @@ FILTER_FIELDS = (("dispositions", "DISPOSITION"), ("stage_codes", "STAGE_CODE"),
 
 def record_filter(aircare_project_id, file_name: str, filters: dict | None = None) -> dict:
     """Mongo filter for one file's conversations. `filters` (all optional): q (text), dispositions / stage_codes /
-    classifications (lists, any-of), date_from / date_to (YYYY-MM-DD, inclusive, on `call_date`)."""
+    classifications (lists, any-of), date_from / date_to (YYYY-MM-DD, inclusive, on `tempDate` only)."""
     f = filters or {}
     flt: dict = {"aircare_project_id": aircare_project_id, "project_id": file_name}
     if f.get("q"):
@@ -37,31 +37,26 @@ def record_filter(aircare_project_id, file_name: str, filters: dict | None = Non
             else:  # "(empty / null)" ticked: also match null, missing and blank values
                 blank = [{field: None}, {field: {"$regex": r"^\s*$"}}]
                 flt.setdefault("$and", []).append({"$or": blank + ([{field: {"$in": values}}] if values else [])})
-    date_range = {op: f[key] for key, op in (("date_from", "$gte"), ("date_to", "$lte")) if f.get(key)}
-    if date_range:
-        flt.setdefault("$and", []).append(_date_clause(f.get("date_from"), f.get("date_to"), date_range))
+    if f.get("date_from") or f.get("date_to"):
+        flt.setdefault("$and", []).append(_date_clause(f.get("date_from"), f.get("date_to")))
     return flt
 
 
-def _date_clause(date_from: str | None, date_to: str | None, call_date_range: dict) -> dict:
-    """Date filter on `tempDate` (DD/MM/YYYY text, so it is matched as a list of days, not a string range). Records with no
-    tempDate fall back to the derived `call_date`."""
-    no_temp = {"$or": [{"tempDate": {"$exists": False}}, {"tempDate": None}, {"tempDate": {"$regex": r"^\s*$"}}]}
-    fallback = {"$and": [no_temp, {"call_date": call_date_range}]}
-    try:
-        start = datetime.strptime(date_from, "%Y-%m-%d") if date_from else None
-        end = datetime.strptime(date_to, "%Y-%m-%d") if date_to else None
-    except ValueError:
-        return {"call_date": call_date_range}
-    if start and not end:
-        end = datetime.combine(date.today(), time.min) + timedelta(days=366)
-    if end and not start:
-        start = datetime.combine(date.today(), time.min) - timedelta(days=3650)
-    days = (end - start).days + 1
-    if days < 1 or days > MAX_DATE_SPAN_DAYS:
-        return {"call_date": call_date_range}
-    texts = [(start + timedelta(days=i)).strftime("%d/%m/%Y") for i in range(days)]
-    return {"$or": [{"tempDate": {"$in": texts}}, fallback]}
+def _date_clause(date_from: str | None, date_to: str | None) -> dict:
+    """Date filter on `tempDate` only (DD/MM/YYYY text, so it is matched as a list of days, not a string range).
+    The conversation itself (message timestamps / call_date) is not consulted: a record with no tempDate never matches."""
+    today = datetime.combine(date.today(), time.min)
+    start = datetime.strptime(date_from, "%Y-%m-%d") if date_from else None
+    end = datetime.strptime(date_to, "%Y-%m-%d") if date_to else None
+    if start is None:
+        start = (end or today) - timedelta(days=3650)
+    if end is None:
+        end = max(start, today + timedelta(days=366))
+    if end < start:
+        return {"tempDate": {"$in": []}}
+    start = max(start, end - timedelta(days=MAX_DATE_SPAN_DAYS - 1))
+    texts = [(start + timedelta(days=i)).strftime("%d/%m/%Y") for i in range((end - start).days + 1)]
+    return {"tempDate": {"$in": texts}}
 
 
 async def with_analytics(flt: dict, aircare_project_id, file_name: str, mode: str | None) -> dict:
