@@ -397,16 +397,24 @@ async def list_records(
     col = records_collection()
     total = await col.count_documents(flt)
     page = await col.find(flt).sort("_id", 1).skip(skip).limit(limit).to_list(limit)
+    return success_response(data={
+        "total": total, "skip": skip, "limit": limit,
+        "columns": [m.model_dump() for m in ds.config.field_mapper], "items": await _table_items(ds, page),
+    })
+
+
+async def _table_items(ds: AutoScamDataset, docs: list[dict]) -> list[dict]:
+    """The Conversations table's rows for these documents: base columns plus one value per field-mapper column."""
     results = {
         r.customer_crt_id: r
         async for r in AutoScamResult.find({
-            "aircare_project_id": ds.aircare_project_id, "file_name": file_name,
-            "customer_crt_id": {"$in": [record_key(d) for d in page]},
+            "aircare_project_id": ds.aircare_project_id, "file_name": ds.file_name,
+            "customer_crt_id": {"$in": [record_key(d) for d in docs]},
         })
     }
     mapper = ds.config.field_mapper
     items = []
-    for d in page:
+    for d in docs:
         r = results.get(record_key(d))
         analytics = {f["field"]: f["updated"] for f in r.fields} if r else {}
         # one value per mapped column: from the analytics JSON (once analysed) or from the conversation itself
@@ -419,7 +427,51 @@ async def list_records(
             "mapped": mapped, "analysed": bool(r and not r.error), "error": r.error if r else None,
             "rule_changed": bool(r and r.rule_trace),  # the rules changed what the model predicted
         })
-    return success_response(data={"total": total, "skip": skip, "limit": limit, "columns": [m.model_dump() for m in mapper], "items": items})
+    return items
+
+
+MAX_TABLE_ROWS = 20_000
+
+
+class RecordRowsBody(BaseModel):
+    project_id: str
+    record_ids: list[str] = Field(default_factory=list, max_length=5000)
+    all_matching: bool = Field(False, description="Every conversation matching `filters` (the whole file if none), ignoring record_ids.")
+    filters: RecordFilters = Field(default_factory=RecordFilters)
+
+
+@router.post("/datasets/{file_name}/records/rows", summary="The table's rows for a selection (or every match), e.g. for a CSV export")
+async def record_rows(
+    file_name: str, body: RecordRowsBody, identity: IdentityContext = Depends(require_permission("auto_scam.view"))
+) -> dict:
+    """Same row shape as the list, without paging, for the selected conversations or every match of the filters. Streams
+    the documents in chunks so memory stays bounded; capped at MAX_TABLE_ROWS (`truncated` says if it was reached)."""
+    ensure_project_access(identity, body.project_id)
+    ds = await _dataset(body.project_id, file_name)
+    if body.all_matching:
+        flt = _record_filter(ds, body.filters.model_dump())
+    else:
+        if not body.record_ids:
+            raise BadRequestError("Select at least one conversation")
+        try:
+            oids = [ObjectId(r) for r in body.record_ids]
+        except Exception:
+            raise BadRequestError("record id is not valid", {"field": "record_ids"})
+        flt = {**_record_filter(ds), "_id": {"$in": oids}}  # scoped to this file: foreign ids are ignored
+    items: list[dict] = []
+    chunk: list[dict] = []
+    truncated = False
+    async for d in records_collection().find(flt).sort("_id", 1).limit(MAX_TABLE_ROWS + 1):
+        if len(items) + len(chunk) >= MAX_TABLE_ROWS:
+            truncated = True
+            break
+        chunk.append(d)
+        if len(chunk) >= 1000:
+            items += await _table_items(ds, chunk)
+            chunk = []
+    if chunk:
+        items += await _table_items(ds, chunk)
+    return success_response(data={"columns": [m.model_dump() for m in ds.config.field_mapper], "items": items, "truncated": truncated})
 
 
 @router.get("/records/{record_id}", summary="Get one conversation (full document)")

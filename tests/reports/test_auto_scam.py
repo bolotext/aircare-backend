@@ -987,3 +987,54 @@ async def test_field_mapper_can_show_the_model_output_and_what_the_rules_changed
     await legacy.save()
     old = {i["customerCRTId"]: i for i in _unwrap(await client.get(f"{BASE}/datasets/rc/records", params=P))["items"]}["stands"]["mapped"]
     assert "Changed by rules" not in old and "Model said" not in old and old["Final score"] == "HOT" and old["Customer"] == "Ravi"
+
+
+async def test_record_rows_for_csv_export(app, client, fake_scam, monkeypatch):
+    from reports_service.auto_scam import router as router_mod
+
+    _perms(app, "auto_scam.view", "auto_scam.manage", "auto_scam.run")
+    raw = json.dumps([
+        {"customerCRTId": f"c{i}", "customerName": f"Name {i}", "STAGE_CODE": "S" if i < 3 else "T", "DISPOSITION": "D",
+         "tempDate": "26/10/2026", "conversation_log": [{"role": "user", "content": "hi"}]} for i in range(6)
+    ])
+    await _upload(client, "csv", raw)
+    await _upload(client, "csv2", raw)
+    cfg = _unwrap(await client.get(f"{BASE}/datasets/csv/config", params=P))
+    mapper = [{"label": "Customer", "origin": "conversation", "key": "customerName"}, {"label": "Lead score", "origin": "analytics", "key": "INTEREST_CLASSIFICATION"}]
+    await client.put(f"{BASE}/datasets/csv/config", params=P, json={**cfg, "field_mapper": mapper})
+    # analyse only c1 so some rows have results and some do not
+    ids = {i["customerCRTId"]: i["id"] for i in _unwrap(await client.get(f"{BASE}/datasets/csv/records", params=P))["items"]}
+    other = _unwrap(await client.get(f"{BASE}/datasets/csv2/records", params=P))["items"][0]["id"]
+    started = _unwrap(await client.post(f"{BASE}/runs", json={**P, "file_names": ["csv"], "record_ids": [ids["c1"]]}))["started"][0]["run_id"]
+    for _ in range(100):
+        if _unwrap(await client.get(f"{BASE}/runs/{started}"))["status"] not in ("queued", "running"):
+            break
+        await asyncio.sleep(0.1)
+
+    async def rows(**body):
+        r = await client.post(f"{BASE}/datasets/csv/records/rows", json={**P, **body})
+        return _unwrap(r) if r.json()["code"] == 200 else r.json()
+
+    # selected ids (an id from another file is ignored); same row shape as the table
+    sel = await rows(record_ids=[ids["c4"], ids["c1"], other])
+    assert [i["customerCRTId"] for i in sel["items"]] == ["c1", "c4"] and sel["truncated"] is False  # file order
+    assert [c["label"] for c in sel["columns"]] == ["Customer", "Lead score"]
+    by = {i["customerCRTId"]: i for i in sel["items"]}
+    assert by["c1"]["mapped"] == {"Customer": "Name 1", "Lead score": "HOT"} and by["c1"]["analysed"] is True
+    assert by["c4"]["mapped"] == {"Customer": "Name 4"} and by["c4"]["analysed"] is False  # not analysed: only the conversation column
+    assert by["c1"]["call_date"] == "2026-10-26" and by["c1"]["messages"] == 1 and by["c1"]["STAGE_CODE"] == "S"
+    # every match of the filters, across pages
+    allm = await rows(all_matching=True, filters={"stage_codes": ["T"]})
+    assert [i["customerCRTId"] for i in allm["items"]] == ["c3", "c4", "c5"]
+    assert len((await rows(all_matching=True))["items"]) == 6
+    # nothing selected / bad id / no access
+    assert (await rows(record_ids=[]))["code"] == 400 and (await rows(record_ids=["nope"]))["code"] == 400
+    # a cap with a flag, so a huge export can never exhaust memory
+    monkeypatch.setattr(router_mod, "MAX_TABLE_ROWS", 4)
+    capped = await rows(all_matching=True)
+    assert len(capped["items"]) == 4 and capped["truncated"] is True
+    monkeypatch.setattr(router_mod, "MAX_TABLE_ROWS", 6)
+    exact = await rows(all_matching=True)
+    assert len(exact["items"]) == 6 and exact["truncated"] is False  # exactly at the cap is not truncated
+    _perms(app, "auto_scam.manage")
+    assert (await rows(record_ids=[ids["c1"]]))["code"] == 403
