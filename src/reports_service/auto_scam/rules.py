@@ -114,17 +114,47 @@ def check(cond: Condition, actual: Any) -> bool:
     return _empty(actual) or not _same(actual, expected)  # ne
 
 
-def apply_rules(rules: list[Rule], conversation: dict, analytics: dict) -> tuple[dict, list[str]]:
-    """Returns (analytics after the rules, names of the rules that fired). Never raises on bad data."""
+def run_rules(rules: list[Rule], conversation: dict, analytics: dict) -> tuple[dict, list[str], list[dict]]:
+    """(analytics after the rules, names of every rule that fired, trace of the rules that actually CHANGED something).
+
+    A trace entry says why and what: the conditions that were checked (with the value each one saw and whether it was
+    met) and the changes made (field, from, to). A rule that fires but sets a value the field already had changes
+    nothing, so it is in `fired` but not in the trace."""
     out = dict(analytics)
     fired: list[str] = []
+    trace: list[dict] = []
     for index, rule in enumerate(rules, 1):
         if not rule.enabled:
             continue
-        results = [check(c, out[c.field] if c.field in out else conversation.get(c.field)) for c in rule.when]
-        applies = (any(results) if rule.match == "any" else all(results)) if results else True
-        if applies:
-            for action in rule.then:
-                out[action.field] = action.value
-            fired.append(rule.name or f"Rule {index}")
+        checked = []
+        for c in rule.when:
+            actual = out[c.field] if c.field in out else conversation.get(c.field)
+            checked.append({"field": c.field, "op": c.op, "value": c.value, "actual": actual, "met": check(c, actual)})
+        met = [c["met"] for c in checked]
+        applies = (any(met) if rule.match == "any" else all(met)) if met else True
+        if not applies:
+            continue
+        name = rule.name or f"Rule {index}"
+        fired.append(name)
+        changes = []
+        for action in rule.then:
+            before = out.get(action.field)
+            out[action.field] = action.value
+            changed = action.value is not None if before is None else not _same(before, action.value)
+            if changed:
+                changes.append({"field": action.field, "from": before, "to": action.value})
+        if changes:
+            trace.append({"index": index, "rule": name, "match": rule.match, "conditions": checked, "changes": changes})
+    return out, fired, trace
+
+
+def apply_rules(rules: list[Rule], conversation: dict, analytics: dict) -> tuple[dict, list[str]]:
+    """Returns (analytics after the rules, names of the rules that fired). Never raises on bad data."""
+    out, fired, _ = run_rules(rules, conversation, analytics)
     return out, fired
+
+
+def apply_rules_traced(rules: list[Rule], conversation: dict, analytics: dict) -> tuple[dict, list[dict]]:
+    """Returns (analytics after the rules, trace of what the rules changed and why)."""
+    out, _, trace = run_rules(rules, conversation, analytics)
+    return out, trace

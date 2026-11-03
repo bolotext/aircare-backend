@@ -13,11 +13,13 @@ Collections
 """
 
 from datetime import datetime, timezone
+from typing import Literal
 
 from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 from pymongo import IndexModel
 
+from reports_service.auto_scam.mapper import RULE_KEYS
 from reports_service.auto_scam.rules import MAX_RULES, Rule, default_rules
 
 RECORDS_COLLECTION = "auto_scam"
@@ -28,12 +30,17 @@ def utcnow() -> datetime:
 
 
 class FieldMapping(BaseModel):
-    """One row of the field mapper (see mapper.py): analytics JSON key  ->  conversation field."""
+    """One column to show (see mapper.py)."""
 
-    source: str = Field(min_length=1, max_length=200, description="Key or dotted path in the analytics JSON, e.g. 'INTEREST_CLASSIFICATION' or 'result.disposition'.")
-    field: str = Field(min_length=1, max_length=100, description="The conversation field it updates, e.g. STAGE_CODE, DISPOSITION, INTEREST_CLASSIFICATION.")
+    label: str = Field(min_length=1, max_length=60, description="Column title, e.g. 'Customer name' or 'Reason'.")
+    origin: Literal["analytics", "model", "rules", "conversation"] = Field(
+        "analytics",
+        description="Where the value comes from: the final analytics JSON; what the model said before the rules (model); "
+        "what the rules changed (rules, with key = changes / rules / conditions / changed); or the uploaded conversation.",
+    )
+    key: str = Field(min_length=1, max_length=200, description="Key or dotted path, e.g. 'REASON', 'result.reason' or 'user_context.name'.")
 
-    @field_validator("source", "field")
+    @field_validator("label", "key")
     @classmethod
     def _strip(cls, v: str) -> str:
         v = v.strip()
@@ -41,15 +48,22 @@ class FieldMapping(BaseModel):
             raise ValueError("must not be blank")
         return v
 
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def name(self) -> str:
-        """Title of the 'updated' column: derived, so the user only maps key -> field."""
-        return f"New {self.field}"
+    @model_validator(mode="after")
+    def _rules_key(self):
+        if self.origin == "rules" and self.key not in RULE_KEYS:
+            raise ValueError(f"for rule changes the key must be one of: {', '.join(RULE_KEYS)}")
+        return self
 
 
 def default_field_mapper() -> list[FieldMapping]:
-    return [FieldMapping(source="INTEREST_CLASSIFICATION", field="INTEREST_CLASSIFICATION")]
+    return [FieldMapping(label="Lead score", origin="analytics", key="INTEREST_CLASSIFICATION")]
+
+
+def _upgrade_mapping(item):
+    """Earlier shape: {source, field[, name]} = analytics key -> conversation field. Keep it as one analytics column."""
+    if isinstance(item, dict) and "key" not in item and "source" in item:
+        return {"label": item.get("name") or f"New {item.get('field', item['source'])}", "origin": "analytics", "key": item["source"]}
+    return item
 
 
 class AutoScamConfig(BaseModel):
@@ -60,24 +74,28 @@ class AutoScamConfig(BaseModel):
     )
     field_mapper: list[FieldMapping] = Field(
         default_factory=default_field_mapper, max_length=20,
-        description="Maps keys of the analytics JSON to conversation fields; each becomes an 'updated' column.",
+        description="Extra columns to show: each is a key of the analytics JSON or a field of the conversation.",
     )
     workers: int = Field(5, ge=1, le=50)
     max_retries: int = Field(3, ge=0, le=10)
 
     @model_validator(mode="before")
     @classmethod
-    def _migrate_updated_columns(cls, data):
-        """Datasets saved before the field mapper stored `updated_columns` [{field, name}] (analytics key == field)."""
-        if isinstance(data, dict) and "field_mapper" not in data and data.get("updated_columns"):
-            data = {**data, "field_mapper": [{"source": c["field"], "field": c["field"]} for c in data["updated_columns"]]}
+    def _migrate_older_settings(cls, data):
+        """Datasets saved with `updated_columns` or the earlier {source, field} mapper keep working."""
+        if not isinstance(data, dict):
+            return data
+        if isinstance(data.get("field_mapper"), list):
+            return {**data, "field_mapper": [_upgrade_mapping(i) for i in data["field_mapper"]]}
+        if "field_mapper" not in data and data.get("updated_columns"):
+            return {**data, "field_mapper": [{"label": c["name"], "origin": "analytics", "key": c["field"]} for c in data["updated_columns"]]}
         return data
 
     @model_validator(mode="after")
-    def _unique_fields(self):
-        fields = [m.field for m in self.field_mapper]
-        if len(fields) != len(set(fields)):
-            raise ValueError("each conversation field can be mapped only once")
+    def _unique_labels(self):
+        labels = [m.label for m in self.field_mapper]
+        if len(labels) != len(set(labels)):
+            raise ValueError("each column needs a different title")
         return self
 
 
@@ -133,6 +151,10 @@ class AutoScamResult(Document):
     # Every top-level key of the analytics JSON the run produced: {field, updated}. The mapper turns these into
     # previous/updated columns at read time (see mapper.py). Empty = the analysis failed.
     fields: list[dict] = Field(default_factory=list)
+    # What the model said BEFORE the rules ran ({field, value} per key; empty = not recorded, e.g. an older run), and what
+    # the rules changed: [{index, rule, match, conditions: [{field, op, value, actual, met}], changes: [{field, from, to}]}].
+    llm_fields: list[dict] = Field(default_factory=list)
+    rule_trace: list[dict] = Field(default_factory=list)
     error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
 

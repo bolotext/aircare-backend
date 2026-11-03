@@ -1,13 +1,16 @@
-"""Field mapper: connect keys of the analytics JSON the model returned to the conversation's own fields.
+"""Field mapper: choose what to show, as extra columns, in the Conversations and Results tables.
 
-Each mapping says: take `source` (a key, or a dotted path like "result.disposition", in the analytics JSON) and
-treat it as the new value of the conversation field `field` (STAGE_CODE, DISPOSITION, INTEREST_CLASSIFICATION, ...),
-shown as a column called `name`. The "previous" value is simply what the conversation had in `field`.
+Each mapping is ONE column: a `label` (its title), an `origin` and a `key` (a key, or a dotted path like "result.reason"):
+  analytics     a key of the (final) analytics JSON, e.g. INTEREST_CLASSIFICATION or REASON
+  model         the same keys as the model first returned them, BEFORE the rules changed anything
+  rules         what the rules did: key is one of changes / rules / conditions / changed
+  conversation  a field of the uploaded record, e.g. a customer name
 
-Mapped values are computed when results are read, from the stored analytics, so changing the mapper takes effect on
-existing results without re-running anything.
+Values are looked up when results are read, from the stored analytics and the record, so changing the mapper
+takes effect on existing results without re-running anything.
 """
 
+import json
 from typing import Any
 
 
@@ -32,27 +35,67 @@ def same(a: Any, b: Any) -> bool:
     return a is not None and b is not None and str(a).strip() == str(b).strip()
 
 
-def apply_mapper(mapper: list, analytics: dict, record: dict) -> list[dict]:
-    """One entry per mapping: name, source, field, previous (the record's value), updated, found, changed."""
+RULE_KEYS = ("changes", "rules", "conditions", "changed")
+_OP_TEXT = {"eq": "equals", "ne": "does not equal", "lt": "<", "lte": "<=", "gt": ">", "gte": ">=", "in": "is one of",
+            "not_in": "is not one of", "contains": "contains", "is_empty": "is empty", "not_empty": "is not empty"}
+
+
+def _vt(v: Any) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, list):
+        return ", ".join(str(x) for x in v)
+    return json.dumps(v, ensure_ascii=False) if isinstance(v, dict) else str(v)
+
+
+def condition_text(c: dict) -> str:
+    """'setupTime < 35', 'STAGE_CODE is one of DSCN, BUSY', 'DISPOSITION is empty'."""
+    value = "" if c["op"] in ("is_empty", "not_empty") else f" {_vt(c['value'])}"
+    return f"{c['field']} {_OP_TEXT.get(c['op'], c['op'])}{value}"
+
+
+def change_text(ch: dict) -> str:
+    """'INTEREST_CLASSIFICATION: HOT \u2192 WARM'."""
+    return f"{ch['field']}: {_vt(ch['from']) or '(empty)'} \u2192 {_vt(ch['to'])}"
+
+
+def rule_value(key: str, trace: list[dict]) -> str:
+    """The text a 'Rule changes' column shows: what changed, which rules applied, the conditions that were met, or Yes/No."""
+    if key == "changes":
+        return "; ".join(change_text(ch) for e in trace for ch in e["changes"]) or "No rule applied"
+    if key == "rules":
+        return "; ".join(e["rule"] for e in trace)
+    if key == "conditions":
+        return "; ".join(f"{condition_text(c)} (was {_vt(c['actual']) or 'empty'})" for e in trace for c in e["conditions"] if c["met"])
+    return "Yes" if trace else "No"  # "changed"
+
+
+def apply_mapper(mapper: list, analytics: dict, record: dict, llm: dict | None = None, trace: list[dict] | None = None,
+                 recorded: bool = False) -> list[dict]:
+    """One entry per mapped column: label, origin, key, value, found. `origin` says where the value comes from:
+    "analytics" (the final analytics JSON, after the rules), "model" (what the model said BEFORE the rules, same keys),
+    "rules" (what the rules did: changes / rules / conditions / changed) or "conversation" (a field of the uploaded record).
+    `model` and `rules` need the stored history, so they are not found for results saved before it was kept (`recorded`)."""
     out = []
     for m in mapper:
-        found, updated = lookup(analytics, m.source)
-        previous = record.get(m.field)
-        out.append({
-            "name": m.name, "source": m.source, "field": m.field, "previous": previous,
-            "updated": updated if found else None, "found": found, "changed": found and not same(previous, updated),
-        })
+        if m.origin == "rules":
+            found, value = recorded, (rule_value(m.key, trace or []) if recorded else None)
+        elif m.origin == "model":
+            found, value = lookup(llm or {}, m.key) if recorded else (False, None)
+        else:
+            found, value = lookup(analytics if m.origin == "analytics" else record, m.key)
+        out.append({"label": m.label, "origin": m.origin, "key": m.key, "value": value if found else None, "found": found})
     return out
 
 
-def stage_codes(mapper: list, analytics: dict, record: dict) -> tuple[Any, Any]:
-    """(previous, updated) STAGE_CODE: the mapping that targets STAGE_CODE if any, else an analytics `STAGE_CODE` key."""
+def changed_fields(analytics: dict, record: dict) -> list[str]:
+    """Analytics keys that the conversation also has (same name) with a different value, e.g. INTEREST_CLASSIFICATION."""
+    return [k for k, v in analytics.items() if k in record and not same(record[k], v)]
+
+
+def stage_codes(analytics: dict, record: dict) -> tuple[Any, Any]:
+    """(previous, updated) STAGE_CODE: the record's, and the analytics' `STAGE_CODE` key if a rule/the model set one."""
     previous = record.get("STAGE_CODE")
-    for m in mapper:
-        if m.field == "STAGE_CODE":
-            found, value = lookup(analytics, m.source)
-            if found and value not in (None, ""):
-                return previous, value
     value = analytics.get("STAGE_CODE")
     return previous, value if value not in (None, "") else previous
 

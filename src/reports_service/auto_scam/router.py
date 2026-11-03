@@ -20,8 +20,8 @@ from pydantic import BaseModel, Field
 
 from reports_service.auto_scam import runner
 from reports_service.auto_scam.model import AutoScamConfig, AutoScamDataset, AutoScamResult, AutoScamRun, utcnow
-from reports_service.auto_scam.rules import Rule, apply_rules, default_rules
-from reports_service.auto_scam.mapper import analytics_paths, apply_mapper, stage_codes
+from reports_service.auto_scam.rules import Rule, apply_rules_traced, default_rules, run_rules
+from reports_service.auto_scam.mapper import analytics_paths, apply_mapper, changed_fields, stage_codes
 from reports_service.auto_scam.records import KEY_PROJECTION, derive_call_date, record_filter, record_key, records_collection
 from reports_service.core.deps import ensure_project_access, require_permission
 from reports_service.core.users_client import IdentityContext
@@ -152,8 +152,8 @@ class RulesTestBody(BaseModel):
 
 @router.post("/rules/test", summary="Dry-run rules on a sample (nothing is stored)")
 async def test_rules(body: RulesTestBody, identity: IdentityContext = Depends(require_permission("auto_scam.view"))) -> dict:
-    output, fired = apply_rules(body.rules, body.conversation, body.analytics)
-    return success_response(data={"analytics": output, "fired": fired})
+    output, fired, trace = run_rules(body.rules, body.conversation, body.analytics)
+    return success_response(data={"analytics": output, "fired": fired, "trace": trace})
 
 
 FIXED_VALUE_FIELDS = ("STAGE_CODE", "DISPOSITION", "INTEREST_CLASSIFICATION")
@@ -408,16 +408,16 @@ async def list_records(
     items = []
     for d in page:
         r = results.get(record_key(d))
-        mapped = apply_mapper(mapper, {f["field"]: f["updated"] for f in r.fields}, d) if r else []
+        analytics = {f["field"]: f["updated"] for f in r.fields} if r else {}
+        # one value per mapped column: from the analytics JSON (once analysed) or from the conversation itself
+        llm = {f["field"]: f["value"] for f in r.llm_fields} if r else {}
+        mapped = {m["label"]: m["value"] for m in apply_mapper(
+            mapper, analytics, d, llm, r.rule_trace if r else [], bool(r and r.llm_fields)) if m["found"]}
         items.append({
             "id": str(d["_id"]), "customerCRTId": d.get("customerCRTId"), "STAGE_CODE": d.get("STAGE_CODE"),
             "DISPOSITION": d.get("DISPOSITION"), "call_date": d.get("call_date"), "messages": len(d.get("conversation_log") or []),
-            "values": {m.field: d.get(m.field) for m in mapper},  # what the conversation had before analytics
-            "result": {
-                "updated": {m["name"]: m["updated"] for m in mapped if m["found"]},
-                "changed": {m["name"]: m["changed"] for m in mapped if m["found"]},
-                "error": r.error,
-            } if r else None,
+            "mapped": mapped, "analysed": bool(r and not r.error), "error": r.error if r else None,
+            "rule_changed": bool(r and r.rule_trace),  # the rules changed what the model predicted
         })
     return success_response(data={"total": total, "skip": skip, "limit": limit, "columns": [m.model_dump() for m in mapper], "items": items})
 
@@ -549,35 +549,81 @@ async def cancel_run(run_id: str, identity: IdentityContext = Depends(require_pe
     return success_response(message="Cancel requested", data={"id": run_id})
 
 
-@router.get("/datasets/{file_name}/analytics-keys", summary="Keys found in this file's analytics JSON (for the field mapper)")
-async def analytics_keys(
+@router.get("/datasets/{file_name}/mapper-sources", summary="What the field mapper can show: keys of the analytics JSON and fields of the conversations")
+async def mapper_sources(
     file_name: str,
     project_id: str = Query(...),
     identity: IdentityContext = Depends(require_permission("auto_scam.view")),
 ) -> dict:
+    """Paths (with a sample value) found in this file's latest 500 analytics results and 500 conversations."""
     ensure_project_access(identity, project_id)
     ds = await _dataset(project_id, file_name)
     rows = await AutoScamResult.find({"aircare_project_id": ds.aircare_project_id, "file_name": file_name, "fields": {"$ne": []}}) \
         .sort("-_id").limit(FIELD_VALUE_SAMPLE).to_list()
-    return success_response(data=analytics_paths([{f["field"]: f["updated"] for f in r.fields} for r in rows]))
+    hidden = {"conversation_log": 0, "aircare_project_id": 0, "project_id": 0, "uploaded_at": 0, "call_date": 0, "source_id": 0}
+    docs = await records_collection().find(_record_filter(ds), hidden).sort("_id", -1).limit(FIELD_VALUE_SAMPLE).to_list(FIELD_VALUE_SAMPLE)
+    for d in docs:
+        d.pop("_id", None)
+    return success_response(data={
+        "analytics": analytics_paths([{f["field"]: f["updated"] for f in r.fields} for r in rows]),
+        "model": analytics_paths([{f["field"]: f["value"] for f in r.llm_fields} for r in rows if r.llm_fields]),
+        "conversation": analytics_paths(docs),
+        # what the rules did, as a column: the four available values with an example of each
+        "rules": [
+            {"path": "changes", "sample": "INTEREST_CLASSIFICATION: HOT \u2192 WARM", "title": "What the rules changed (from \u2192 to)"},
+            {"path": "rules", "sample": "Interested, but call shorter than 35s", "title": "Which rules applied"},
+            {"path": "conditions", "sample": "setupTime < 35 (was 20)", "title": "The conditions that were met"},
+            {"path": "changed", "sample": "Yes", "title": "Changed by the rules? (Yes / No)"},
+        ],
+    })
 
 
-@router.get("/datasets/{file_name}/results", summary="Per-conversation analytics, mapped through the field mapper")
+class BulkResultsBody(BaseModel):
+    project_id: str
+    result_ids: list[str] = Field(min_length=1, max_length=5000)
+
+
+@router.post("/datasets/{file_name}/results/bulk-delete", summary="Delete analytics results (the conversations stay and become 'not analysed')")
+async def bulk_delete_results(
+    file_name: str, body: BulkResultsBody, identity: IdentityContext = Depends(require_permission("auto_scam.manage"))
+) -> dict:
+    """Removes the stored analytics for the selected results only. Their conversations are untouched, and because a run
+    analyses conversations that have no result, the next run picks them up again."""
+    ensure_project_access(identity, body.project_id)
+    ds = await _dataset(body.project_id, file_name)
+    try:
+        oids = [PydanticObjectId(i) for i in body.result_ids]
+    except Exception:
+        raise BadRequestError("result id is not valid", {"field": "result_ids"})
+    # scoped to this file: ids belonging to another file or project are ignored
+    res = await AutoScamResult.find(
+        {"aircare_project_id": ds.aircare_project_id, "file_name": file_name, "_id": {"$in": oids}}
+    ).delete()
+    return success_response(message="Deleted", data={"deleted": res.deleted_count if res else 0})
+
+
+@router.get("/datasets/{file_name}/results", summary="Per-conversation analytics plus the columns the field mapper shows")
 async def dataset_results(
     file_name: str,
     project_id: str = Query(...),
     changed_only: bool = Query(False),
     identity: IdentityContext = Depends(require_permission("auto_scam.view")),
 ) -> dict:
-    """`fields` is the analytics JSON as stored; `mapped` is that JSON seen through the field mapper (previous = what
-    the conversation had, updated = the mapped analytics value). Computed on read, so a changed mapper applies at once."""
+    """`fields` is the analytics JSON as stored. `mapped` holds the field mapper's columns (computed on read, so a
+    changed mapper applies at once). `changed` = a key the analytics share with the conversation has a new value."""
     ensure_project_access(identity, project_id)
     ds = await _dataset(project_id, file_name)
     mapper = ds.config.field_mapper
     rows = await AutoScamResult.find({"aircare_project_id": ds.aircare_project_id, "file_name": file_name}).sort("+_id").to_list()
 
-    wanted = {"STAGE_CODE", "DISPOSITION", *(m.field for m in mapper)}
-    projection = {f: 1 for f in wanted}
+    # only load the record fields that are needed: stage/disposition, mapped conversation columns, and the analytics' own keys
+    wanted = {"STAGE_CODE", "DISPOSITION"}
+    wanted |= {f["field"] for r in rows for f in r.fields}
+    for m in mapper:
+        if m.origin == "conversation":
+            wanted.add(m.key)
+    # top-level names only: a Mongo projection cannot name both "user_context" and "user_context.city" (path collision)
+    projection = {top: 1 for top in {w.split(".")[0] for w in wanted} if top and not top.startswith("$")}
     records: dict[str, dict] = {}
     for i in range(0, len(rows), 5000):
         oids = [ObjectId(r.record_id) for r in rows[i : i + 5000]]
@@ -588,14 +634,17 @@ async def dataset_results(
     for r in rows:
         rec = records.get(r.record_id, {})
         analytics = {f["field"]: f["updated"] for f in r.fields}
-        mapped = apply_mapper(mapper, analytics, rec)
-        prev_stage, new_stage = stage_codes(mapper, analytics, rec)
-        changed = any(m["changed"] for m in mapped) or (new_stage != prev_stage)
+        prev_stage, new_stage = stage_codes(analytics, rec)
+        changed = bool(changed_fields(analytics, rec)) or new_stage != prev_stage
         if changed_only and not changed:
             continue
         items.append({
             "id": str(r.id), "run_id": r.run_id, "record_id": r.record_id, "customerCRTId": r.customer_crt_id,
             "disposition": rec.get("DISPOSITION"), "previous_stage_code": prev_stage, "updated_stage_code": new_stage,
-            "fields": r.fields, "mapped": mapped, "changed": changed, "error": r.error,
+            "fields": r.fields, "changed": changed, "error": r.error,
+            "mapped": apply_mapper(mapper, analytics, rec, {f["field"]: f["value"] for f in r.llm_fields}, r.rule_trace, bool(r.llm_fields)),
+            # what the model said before the rules, which rules changed it (conditions + from -> to); `rules_recorded` is
+            # False for results saved before this was kept
+            "llm_fields": r.llm_fields, "rule_trace": r.rule_trace, "rule_changed": bool(r.rule_trace), "rules_recorded": bool(r.llm_fields),
         })
     return success_response(data={"columns": [m.model_dump() for m in mapper], "items": items})

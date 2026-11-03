@@ -16,7 +16,7 @@ from beanie import PydanticObjectId
 from bson import ObjectId
 
 from reports_service.auto_scam.model import AutoScamResult, AutoScamRun, utcnow
-from reports_service.auto_scam.rules import apply_rules
+from reports_service.auto_scam.rules import apply_rules_traced
 from reports_service.auto_scam.records import record_filter, record_key, records_collection
 
 logger = logging.getLogger(__name__)
@@ -92,7 +92,7 @@ async def _analysed_keys(run: AutoScamRun) -> set[str]:
     return {d["customer_crt_id"] async for d in cursor}
 
 
-async def _store_result(run: AutoScamRun, key: str, doc: dict, analytics: dict) -> bool:
+async def _store_result(run: AutoScamRun, key: str, doc: dict, analytics: dict, llm: dict | None = None, trace: list[dict] | None = None) -> bool:
     """Upsert the one result row for this customerCRTId. Returns True on success, False on a failed analysis."""
     error = analytics.get("error")
     # the analytics JSON as returned (after the rules): every top-level key with its value
@@ -100,6 +100,8 @@ async def _store_result(run: AutoScamRun, key: str, doc: dict, analytics: dict) 
     ok = bool(fields)
     row = {
         "run_id": str(run.id), "record_id": str(doc["_id"]), "fields": fields,
+        # the model's own answer before the rules, and what the rules changed (and why)
+        "llm_fields": [{"field": k, "value": v} for k, v in (llm or {}).items()] if ok else [], "rule_trace": (trace or []) if ok else [],
         "error": None if ok else (error or "no analytics returned"), "created_at": utcnow(),
     }
     flt = {"aircare_project_id": run.aircare_project_id, "file_name": run.file_name, "customer_crt_id": key}
@@ -166,9 +168,10 @@ async def _execute(run_id: str) -> None:
                 return
             conversation = {k: v for k, v in doc.items() if k not in INTERNAL_FIELDS}
             analytics = await loop.run_in_executor(executor, _analyze, conversation, client, run.prompt_text, run.config.max_retries)
+            llm, trace = dict(analytics), []
             if not analytics.get("error"):
-                analytics, _fired = apply_rules(run.config.rules, conversation, analytics)  # dynamic, UI-configured logic
-            if await _store_result(run, key, doc, analytics):
+                analytics, trace = apply_rules_traced(run.config.rules, conversation, analytics)  # dynamic, UI-configured logic
+            if await _store_result(run, key, doc, analytics, llm, trace):
                 counts["ok"] += 1
             else:
                 counts["failed"] += 1

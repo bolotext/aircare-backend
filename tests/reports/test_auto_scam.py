@@ -118,15 +118,13 @@ async def test_run_skips_already_analysed_by_customer_crt_id(app, client, fake_s
     assert {r["customerCRTId"] for r in rows} == {"a", "b"}  # keyed by customerCRTId
     a = next(r for r in rows if r["customerCRTId"] == "a")
     assert a["fields"] == [{"field": "INTEREST_CLASSIFICATION", "updated": "HOT"}]  # the analytics JSON as stored
-    assert a["mapped"] == [{"name": "New INTEREST_CLASSIFICATION", "source": "INTEREST_CLASSIFICATION", "field": "INTEREST_CLASSIFICATION",
-                            "previous": "WARM", "updated": "HOT", "found": True, "changed": True}]
-    assert a["changed"] is True
+    assert a["mapped"] == [{"label": "Lead score", "origin": "analytics", "key": "INTEREST_CLASSIFICATION", "value": "HOT", "found": True}]
+    assert a["changed"] is True  # the model's INTEREST_CLASSIFICATION differs from the conversation's WARM
     assert (a["previous_stage_code"], a["updated_stage_code"]) == ("NEUTRAL", "NEUTRAL")
     listed = _unwrap(await client.get(f"{BASE}/datasets/nov/records", params=P))
-    assert listed["columns"] == [{"source": "INTEREST_CLASSIFICATION", "field": "INTEREST_CLASSIFICATION", "name": "New INTEREST_CLASSIFICATION"}]
+    assert listed["columns"] == [{"label": "Lead score", "origin": "analytics", "key": "INTEREST_CLASSIFICATION"}]  # default: one column
     first = listed["items"][0]
-    assert first["values"] == {"INTEREST_CLASSIFICATION": "WARM"}  # original value, original field name
-    assert first["result"]["updated"] == {"New INTEREST_CLASSIFICATION": "HOT"} and first["result"]["changed"] == {"New INTEREST_CLASSIFICATION": True}
+    assert first["mapped"] == {"Lead score": "HOT"} and first["analysed"] is True  # ONE column, no before/after pair
     assert _unwrap(await client.get(f"{BASE}/datasets", params=P))[0]["analysed"] == 2
 
     # second run: everything already has analytics -> nothing is sent to OpenAI
@@ -260,91 +258,105 @@ async def test_permissions_and_project_isolation(app, client):
     assert (await client.post(f"{BASE}/runs", json={**P, "file_names": ["x"]})).json()["code"] == 403
 
 
-async def test_field_mapper_maps_analytics_json_to_conversation_fields(app, client, fake_scam):
-    _perms(app, "auto_scam.view", "auto_scam.manage", "auto_scam.run")
-    raw = json.dumps([{"customerCRTId": "a", "INTEREST_CLASSIFICATION": "WARM", "DISPOSITION": "NEUTRAL", "STAGE_CODE": "INTERESTED",
-                       "setupTime": 120, "conversation_log": []}])  # long call: the default HOT->WARM rule does not apply
-    await _upload(client, "multi", raw)
-    # the model returns a nested JSON with several outputs
-    fake_scam["extra"] = {"call": {"outcome": {"disposition": "CALLBACK", "stage": "CALLBACK_SCHEDULED"}}, "mood": "positive"}
-    cfg = _unwrap(await client.get(f"{BASE}/datasets/multi/config", params=P))
-    mapper = [  # just two things per row: the key in the analytics JSON and the field it updates
-        {"source": "INTEREST_CLASSIFICATION", "field": "INTEREST_CLASSIFICATION"},
-        {"source": "call.outcome.disposition", "field": "DISPOSITION"},   # nested path
-        {"source": "call.outcome.stage", "field": "STAGE_CODE"},
-        {"source": "mood", "field": "SENTIMENT"},  # maps to a field the conversation does not have yet
-        {"source": "not.in.the.json", "field": "OTHER"},
-    ]
-    assert (await client.put(f"{BASE}/datasets/multi/config", params=P, json={**cfg, "field_mapper": mapper})).json()["code"] == 200
-    dup = [mapper[0], {"source": "something.else", "field": "INTEREST_CLASSIFICATION"}]  # a field can be mapped once
-    assert (await client.put(f"{BASE}/datasets/multi/config", params=P, json={**cfg, "field_mapper": dup})).json()["code"] == 422
-    blank = [{"source": "x", "field": "  "}]
-    assert (await client.put(f"{BASE}/datasets/multi/config", params=P, json={**cfg, "field_mapper": blank})).json()["code"] == 422
-    await _run(client, "multi")
-
-    data = _unwrap(await client.get(f"{BASE}/datasets/multi/results", params=P))
-    row = data["items"][0]
-    by = {m["field"]: m for m in row["mapped"]}
-    assert by["INTEREST_CLASSIFICATION"]["previous"] == "WARM" and by["INTEREST_CLASSIFICATION"]["updated"] == "HOT" and by["INTEREST_CLASSIFICATION"]["changed"]
-    assert by["DISPOSITION"] == {"name": "New DISPOSITION", "source": "call.outcome.disposition", "field": "DISPOSITION",
-                                 "previous": "NEUTRAL", "updated": "CALLBACK", "found": True, "changed": True}
-    assert by["SENTIMENT"]["previous"] is None and by["SENTIMENT"]["updated"] == "positive" and by["SENTIMENT"]["changed"]
-    assert by["OTHER"]["found"] is False and by["OTHER"]["updated"] is None and by["OTHER"]["changed"] is False
-    # a mapping that targets STAGE_CODE drives the updated stage code
-    assert (row["previous_stage_code"], row["updated_stage_code"]) == ("INTERESTED", "CALLBACK_SCHEDULED")
-    # the stored analytics JSON keeps the nested structure (this is what Export JSON uses)
-    stored = {f["field"]: f["updated"] for f in row["fields"]}
-    assert stored["call"]["outcome"]["disposition"] == "CALLBACK" and stored["mood"] == "positive"
-
-    # conversations list: previous values by conversation field, updated values by column name
-    listed = _unwrap(await client.get(f"{BASE}/datasets/multi/records", params=P))
-    assert [c["name"] for c in listed["columns"]] == [f"New {m['field']}" for m in mapper]  # header derived from the field
-    item = listed["items"][0]
-    assert item["values"]["DISPOSITION"] == "NEUTRAL" and item["values"]["SENTIMENT"] is None
-    assert item["result"]["updated"]["New DISPOSITION"] == "CALLBACK" and "New OTHER" not in item["result"]["updated"]
-
-    # changing the mapper later applies to the existing results immediately, with no re-run
-    cfg = _unwrap(await client.get(f"{BASE}/datasets/multi/config", params=P))
-    only = [{"source": "mood", "field": "DISPOSITION"}]
-    await client.put(f"{BASE}/datasets/multi/config", params=P, json={**cfg, "field_mapper": only})
-    again = _unwrap(await client.get(f"{BASE}/datasets/multi/results", params=P))["items"][0]
-    assert [(m["name"], m["previous"], m["updated"]) for m in again["mapped"]] == [("New DISPOSITION", "NEUTRAL", "positive")]
-    assert again["updated_stage_code"] == "INTERESTED"  # no STAGE_CODE mapping and no STAGE_CODE key in the JSON any more
-    assert len(fake_scam["calls"]) == 1
-
-
-async def test_field_mapper_changed_only_filter_and_analytics_keys(app, client, fake_scam):
+async def test_field_mapper_shows_result_keys_and_conversation_fields_as_single_columns(app, client, fake_scam):
     _perms(app, "auto_scam.view", "auto_scam.manage", "auto_scam.run")
     raw = json.dumps([
-        {"customerCRTId": "same", "INTEREST_CLASSIFICATION": "HOT", "conversation_log": []},      # fake model says HOT -> unchanged
-        {"customerCRTId": "diff", "INTEREST_CLASSIFICATION": "COLD", "conversation_log": []},     # -> changed
+        {"customerCRTId": "a", "customerName": "Narendra", "user_context": {"city": "Chennai"}, "INTEREST_CLASSIFICATION": "WARM",
+         "STAGE_CODE": "INTERESTED", "setupTime": 120, "conversation_log": []},
+        {"customerCRTId": "b", "customerName": "Priya", "INTEREST_CLASSIFICATION": "COLD", "STAGE_CODE": "DSCN", "conversation_log": []},
+    ])
+    await _upload(client, "multi", raw)
+    # the model returns the lead score plus a reason (and some nested JSON)
+    fake_scam["extra"] = {"REASON": "Only confirmed identity.", "detail": {"score": 3}}
+    cfg = _unwrap(await client.get(f"{BASE}/datasets/multi/config", params=P))
+    mapper = [
+        {"label": "Customer name", "origin": "conversation", "key": "customerName"},
+        {"label": "City", "origin": "conversation", "key": "user_context.city"},        # nested conversation field
+        {"label": "Lead score", "origin": "analytics", "key": "INTEREST_CLASSIFICATION"},
+        {"label": "Reason", "origin": "analytics", "key": "REASON"},
+        {"label": "Detail score", "origin": "analytics", "key": "detail.score"},         # nested analytics path
+        {"label": "Nope", "origin": "analytics", "key": "not.there"},
+    ]
+    assert (await client.put(f"{BASE}/datasets/multi/config", params=P, json={**cfg, "field_mapper": mapper})).json()["code"] == 200
+    for bad in (
+        [mapper[0], {**mapper[1], "label": "Customer name"}],                     # duplicate titles
+        [{"label": " ", "origin": "analytics", "key": "x"}],                       # blank title
+        [{"label": "x", "origin": "somewhere", "key": "x"}],                       # unknown origin
+        [{"label": "x", "origin": "analytics", "key": ""}],                        # blank key
+    ):
+        assert (await client.put(f"{BASE}/datasets/multi/config", params=P, json={**cfg, "field_mapper": bad})).json()["code"] == 422
+
+    # before any run: conversation columns already have values, analytics columns do not
+    pre = _unwrap(await client.get(f"{BASE}/datasets/multi/records", params=P))
+    assert [c["label"] for c in pre["columns"]] == [m["label"] for m in mapper]
+    first = next(i for i in pre["items"] if i["customerCRTId"] == "a")
+    assert first["mapped"] == {"Customer name": "Narendra", "City": "Chennai"} and first["analysed"] is False
+
+    await _run(client, "multi")
+    listed = _unwrap(await client.get(f"{BASE}/datasets/multi/records", params=P))
+    first = next(i for i in listed["items"] if i["customerCRTId"] == "a")
+    assert first["mapped"] == {"Customer name": "Narendra", "City": "Chennai", "Lead score": "HOT",
+                               "Reason": "Only confirmed identity.", "Detail score": 3}  # "Nope" is simply absent
+    assert first["analysed"] is True
+
+    data = _unwrap(await client.get(f"{BASE}/datasets/multi/results", params=P))
+    row = next(r for r in data["items"] if r["customerCRTId"] == "a")
+    by = {m["label"]: m for m in row["mapped"]}
+    assert by["Customer name"] == {"label": "Customer name", "origin": "conversation", "key": "customerName", "value": "Narendra", "found": True}
+    assert by["Reason"]["value"] == "Only confirmed identity." and by["Reason"]["origin"] == "analytics"
+    assert by["Nope"]["found"] is False and by["Nope"]["value"] is None
+    stored = {f["field"]: f["updated"] for f in row["fields"]}
+    assert stored["REASON"] == "Only confirmed identity." and stored["detail"] == {"score": 3}  # the stored JSON keeps every key
+
+    # changing the mapper applies to existing results immediately, with no re-run
+    only = [{"label": "Why", "origin": "analytics", "key": "REASON"}]
+    await client.put(f"{BASE}/datasets/multi/config", params=P, json={**cfg, "field_mapper": only})
+    again = next(r for r in _unwrap(await client.get(f"{BASE}/datasets/multi/results", params=P))["items"] if r["customerCRTId"] == "a")
+    assert [(m["label"], m["value"]) for m in again["mapped"]] == [("Why", "Only confirmed identity.")]
+    assert len(fake_scam["calls"]) == 2  # only the first run called the model
+
+
+async def test_changed_only_and_mapper_sources(app, client, fake_scam):
+    _perms(app, "auto_scam.view", "auto_scam.manage", "auto_scam.run")
+    raw = json.dumps([
+        {"customerCRTId": "same", "customerName": "A", "INTEREST_CLASSIFICATION": "HOT", "conversation_log": []},    # model says HOT: unchanged
+        {"customerCRTId": "diff", "customerName": "B", "INTEREST_CLASSIFICATION": "COLD", "conversation_log": []},   # -> changed
     ])
     await _upload(client, "flt2", raw)
-    fake_scam["extra"] = {"detail": {"reason": "price", "score": 3}}
+    fake_scam["extra"] = {"REASON": "price", "detail": {"reason": "cost", "score": 3}}
     await _run(client, "flt2")
-    all_rows = _unwrap(await client.get(f"{BASE}/datasets/flt2/results", params=P))["items"]
-    assert sorted(r["customerCRTId"] for r in all_rows) == ["diff", "same"]
+    assert sorted(r["customerCRTId"] for r in _unwrap(await client.get(f"{BASE}/datasets/flt2/results", params=P))["items"]) == ["diff", "same"]
     changed = _unwrap(await client.get(f"{BASE}/datasets/flt2/results", params={**P, "changed_only": True}))["items"]
-    assert [r["customerCRTId"] for r in changed] == ["diff"]
+    assert [r["customerCRTId"] for r in changed] == ["diff"]  # REASON has no counterpart on the conversation, so it never counts
 
-    keys = _unwrap(await client.get(f"{BASE}/datasets/flt2/analytics-keys", params=P))
-    paths = {k["path"]: k["sample"] for k in keys}
-    assert paths["INTEREST_CLASSIFICATION"] in ("HOT",) and paths["detail.reason"] == "price" and paths["detail.score"] == 3
+    src = _unwrap(await client.get(f"{BASE}/datasets/flt2/mapper-sources", params=P))
+    a = {k["path"]: k["sample"] for k in src["analytics"]}
+    c = {k["path"]: k["sample"] for k in src["conversation"]}
+    assert a["INTEREST_CLASSIFICATION"] == "HOT" and a["REASON"] == "price" and a["detail.reason"] == "cost" and a["detail.score"] == 3
+    assert c["customerName"] in ("A", "B") and "INTEREST_CLASSIFICATION" in c and "conversation_log" not in c
+    assert not any(k in c for k in ("project_id", "aircare_project_id", "call_date", "uploaded_at", "_id"))  # internals hidden
     _perms(app, "auto_scam.manage")
-    assert (await client.get(f"{BASE}/datasets/flt2/analytics-keys", params=P)).json()["code"] == 403
+    assert (await client.get(f"{BASE}/datasets/flt2/mapper-sources", params=P)).json()["code"] == 403
 
 
-def test_mapper_lookup_and_migration_of_old_updated_columns():
-    from reports_service.auto_scam.mapper import analytics_paths, lookup
+def test_mapper_lookup_and_migration_of_older_settings():
+    from reports_service.auto_scam.mapper import analytics_paths, changed_fields, lookup, same, stage_codes
     from reports_service.auto_scam.model import AutoScamConfig
 
     data = {"a.b": 1, "x": {"y": [10, {"z": "deep"}]}}
     assert lookup(data, "a.b") == (True, 1)  # an exact key containing a dot wins
     assert lookup(data, "x.y.1.z") == (True, "deep") and lookup(data, "x.y.5") == (False, None) and lookup(data, "nope") == (False, None)
     assert {p["path"] for p in analytics_paths([{"k": {"n": 1}}, {"k": {"m": 2}}, {"top": "v"}])} == {"k.n", "k.m", "top"}
-    # datasets saved with the previous "Updated columns" setting keep working
-    cfg = AutoScamConfig(prompt="p", updated_columns=[{"field": "DISPOSITION", "name": "New disposition"}])
-    assert [(m.source, m.field, m.name) for m in cfg.field_mapper] == [("DISPOSITION", "DISPOSITION", "New DISPOSITION")]
+    assert same(49, "49") and same(None, None) and not same("a", None)
+    assert changed_fields({"INTEREST_CLASSIFICATION": "HOT", "REASON": "r", "X": 1}, {"INTEREST_CLASSIFICATION": "COLD", "X": 1}) == ["INTEREST_CLASSIFICATION"]
+    assert stage_codes({"STAGE_CODE": "NEW"}, {"STAGE_CODE": "OLD"}) == ("OLD", "NEW")
+    assert stage_codes({}, {"STAGE_CODE": "OLD"}) == ("OLD", "OLD")
+    # settings saved by earlier versions keep working
+    old_columns = AutoScamConfig(prompt="p", updated_columns=[{"field": "DISPOSITION", "name": "New disposition"}])
+    assert [(m.label, m.origin, m.key) for m in old_columns.field_mapper] == [("New disposition", "analytics", "DISPOSITION")]
+    old_mapper = AutoScamConfig(prompt="p", field_mapper=[{"source": "mood", "field": "SENTIMENT", "name": "New SENTIMENT"}])
+    assert [(m.label, m.origin, m.key) for m in old_mapper.field_mapper] == [("New SENTIMENT", "analytics", "mood")]
+    assert [(m.label, m.key) for m in AutoScamConfig(prompt="p").field_mapper] == [("Lead score", "INTEREST_CLASSIFICATION")]
 
 
 async def test_run_only_the_selected_conversations(app, client, fake_scam):
@@ -479,8 +491,8 @@ async def test_rules_are_saved_per_dataset_and_update_disposition(app, client, f
         "then": [{"field": "DISPOSITION", "value": "CALLBACK"}, {"field": "STAGE_CODE", "value": "CALLBACK_SCHEDULED"}],
     }]
     cfg["field_mapper"] = [
-        {"source": "STAGE_CODE", "field": "STAGE_CODE"}, {"source": "DISPOSITION", "field": "DISPOSITION"},
-        {"source": "INTEREST_CLASSIFICATION", "field": "INTEREST_CLASSIFICATION"},
+        {"label": "New stage", "origin": "analytics", "key": "STAGE_CODE"}, {"label": "New disposition", "origin": "analytics", "key": "DISPOSITION"},
+        {"label": "Lead score", "origin": "analytics", "key": "INTEREST_CLASSIFICATION"},
     ]
     assert (await client.put(f"{BASE}/datasets/rules/config", params=P, json=cfg)).json()["code"] == 200
     bad = {**cfg, "rules": [{"when": [{"field": "x", "op": "regex", "value": "a"}], "then": [{"field": "y", "value": 1}]}]}
@@ -491,20 +503,20 @@ async def test_rules_are_saved_per_dataset_and_update_disposition(app, client, f
     assert run["status"] == "succeeded"
     result_rows = {r["customerCRTId"]: r for r in _unwrap(await client.get(f"{BASE}/datasets/rules/results", params=P))["items"]}
     stored = {cid: {f["field"]: f["updated"] for f in r["fields"]} for cid, r in result_rows.items()}
-    mapped = {cid: {m["name"]: m for m in r["mapped"]} for cid, r in result_rows.items()}
+    mapped = {cid: {m["label"]: m for m in r["mapped"]} for cid, r in result_rows.items()}
     # fake model says HOT: a (INTERESTED, 10s) -> default rule HOT->WARM, then the new rule sets DISPOSITION
     assert stored["a"]["INTEREST_CLASSIFICATION"] == "WARM" and stored["a"]["DISPOSITION"] == "CALLBACK"
-    assert mapped["a"]["New DISPOSITION"]["previous"] == "NEUTRAL" and mapped["a"]["New DISPOSITION"]["updated"] == "CALLBACK"
+    assert mapped["a"]["New disposition"]["value"] == "CALLBACK"
     # b (DSCN) -> COLD by the default rules; the DISPOSITION rule does not apply, so the JSON has no DISPOSITION
     assert stored["b"]["INTEREST_CLASSIFICATION"] == "COLD" and "DISPOSITION" not in stored["b"]
-    assert mapped["b"]["New DISPOSITION"]["found"] is False
+    assert mapped["b"]["New disposition"]["found"] is False
     assert (result_rows["a"]["previous_stage_code"], result_rows["a"]["updated_stage_code"]) == ("INTERESTED", "CALLBACK_SCHEDULED")
     assert (result_rows["b"]["previous_stage_code"], result_rows["b"]["updated_stage_code"]) == ("DSCN", "DSCN")  # rule didn't apply
     listed = _unwrap(await client.get(f"{BASE}/datasets/rules/records", params=P))
-    assert [c["name"] for c in listed["columns"]] == ["New STAGE_CODE", "New DISPOSITION", "New INTEREST_CLASSIFICATION"]
+    assert [c["label"] for c in listed["columns"]] == ["New stage", "New disposition", "Lead score"]
     first = next(i for i in listed["items"] if i["customerCRTId"] == "a")
-    assert first["result"]["updated"] == {"New STAGE_CODE": "CALLBACK_SCHEDULED", "New DISPOSITION": "CALLBACK", "New INTEREST_CLASSIFICATION": "WARM"}
-    assert first["values"]["STAGE_CODE"] == "INTERESTED"
+    assert first["mapped"] == {"New stage": "CALLBACK_SCHEDULED", "New disposition": "CALLBACK", "Lead score": "WARM"}
+    assert first["STAGE_CODE"] == "INTERESTED"  # the conversation's own stage code is untouched
 
 
 async def test_rules_dry_run_endpoint(app, client):
@@ -512,7 +524,12 @@ async def test_rules_dry_run_endpoint(app, client):
     body = {"rules": [{"name": "r", "when": [{"field": "STAGE_CODE", "op": "eq", "value": "DSCN"}], "then": [{"field": "DISPOSITION", "value": "DROPPED"}]}],
             "conversation": {"STAGE_CODE": "DSCN"}, "analytics": {"INTEREST_CLASSIFICATION": "HOT"}}
     data = _unwrap(await client.post(f"{BASE}/rules/test", json=body))
-    assert data == {"analytics": {"INTEREST_CLASSIFICATION": "HOT", "DISPOSITION": "DROPPED"}, "fired": ["r"]}
+    assert data["analytics"] == {"INTEREST_CLASSIFICATION": "HOT", "DISPOSITION": "DROPPED"} and data["fired"] == ["r"]
+    assert data["trace"] == [{
+        "index": 1, "rule": "r", "match": "all",
+        "conditions": [{"field": "STAGE_CODE", "op": "eq", "value": "DSCN", "actual": "DSCN", "met": True}],
+        "changes": [{"field": "DISPOSITION", "from": None, "to": "DROPPED"}],
+    }]
     defaults = _unwrap(await client.get(f"{BASE}/defaults"))
     assert len(defaults["rules"]) == 4 and "role" in defaults["prompt"]
 
@@ -774,3 +791,199 @@ async def test_stale_uploads_are_swept(app, client, upload_dir):
     await sweep_uploads()
     swept = await AutoScamUpload.get(up.id)
     assert swept.status == "failed" and not (upload_dir / f"{uid}.part").exists()
+
+
+async def test_bulk_delete_results_keeps_conversations_and_they_are_reanalysed(app, client, fake_scam):
+    _perms(app, "auto_scam.view", "auto_scam.manage", "auto_scam.run")
+    await _upload(client, "res", RAW)  # customerCRTIds a, b
+    await _upload(client, "res2", RAW)
+    await _run(client, "res")
+    await _run(client, "res2")
+    rows = _unwrap(await client.get(f"{BASE}/datasets/res/results", params=P))["items"]
+    other = _unwrap(await client.get(f"{BASE}/datasets/res2/results", params=P))["items"][0]["id"]
+    a = next(r["id"] for r in rows if r["customerCRTId"] == "a")
+
+    # selected ids only; an id from another file is ignored
+    r = await client.post(f"{BASE}/datasets/res/results/bulk-delete", json={**P, "result_ids": [a, other]})
+    assert _unwrap(r)["deleted"] == 1
+    left = _unwrap(await client.get(f"{BASE}/datasets/res/results", params=P))["items"]
+    assert [x["customerCRTId"] for x in left] == ["b"]
+    assert len(_unwrap(await client.get(f"{BASE}/datasets/res2/results", params=P))["items"]) == 2  # other file untouched
+    # the conversations are still there, and the deleted one shows as not analysed
+    listed = _unwrap(await client.get(f"{BASE}/datasets/res/records", params=P))
+    assert listed["total"] == 2
+    by = {i["customerCRTId"]: i for i in listed["items"]}
+    assert by["a"]["analysed"] is False and by["b"]["analysed"] is True
+    counts = {d["file_name"]: d["analysed"] for d in _unwrap(await client.get(f"{BASE}/datasets", params=P))}
+    assert counts == {"res": 1, "res2": 2}  # the files list follows the results
+
+    # the next run analyses exactly the conversation whose result was deleted
+    fake_scam["calls"].clear()
+    run = await _run(client, "res")
+    assert (run["total"], run["skipped"]) == (1, 1) and [c for c, _ in fake_scam["calls"]] == ["a"]
+
+    assert (await client.post(f"{BASE}/datasets/res/results/bulk-delete", json={**P, "result_ids": []})).json()["code"] == 422
+    assert (await client.post(f"{BASE}/datasets/res/results/bulk-delete", json={**P, "result_ids": ["nope"]})).json()["code"] == 400
+    _perms(app, "auto_scam.view")
+    assert (await client.post(f"{BASE}/datasets/res/results/bulk-delete", json={**P, "result_ids": [a]})).json()["code"] == 403
+
+
+async def test_field_mapper_order_is_kept_and_drives_the_column_order(app, client, fake_scam):
+    _perms(app, "auto_scam.view", "auto_scam.manage", "auto_scam.run")
+    await _upload(client, "ord", json.dumps([{"customerCRTId": "a", "customerName": "N", "conversation_log": []}]))
+    fake_scam["extra"] = {"REASON": "r"}
+    await _run(client, "ord")
+    cfg = _unwrap(await client.get(f"{BASE}/datasets/ord/config", params=P))
+    cols = [
+        {"label": "Reason", "origin": "analytics", "key": "REASON"},
+        {"label": "Customer name", "origin": "conversation", "key": "customerName"},
+        {"label": "Lead score", "origin": "analytics", "key": "INTEREST_CLASSIFICATION"},
+    ]
+    for order in (cols, [cols[2], cols[0], cols[1]], list(reversed(cols))):  # move rows up/down: the saved order wins
+        assert (await client.put(f"{BASE}/datasets/ord/config", params=P, json={**cfg, "field_mapper": order})).json()["code"] == 200
+        assert [c["label"] for c in _unwrap(await client.get(f"{BASE}/datasets/ord/config", params=P))["field_mapper"]] == [c["label"] for c in order]
+        assert [c["label"] for c in _unwrap(await client.get(f"{BASE}/datasets/ord/records", params=P))["columns"]] == [c["label"] for c in order]
+        res = _unwrap(await client.get(f"{BASE}/datasets/ord/results", params=P))
+        assert [c["label"] for c in res["columns"]] == [c["label"] for c in order]
+        assert [m["label"] for m in res["items"][0]["mapped"]] == [c["label"] for c in order]
+
+
+def test_rule_trace_explains_what_changed_and_why():
+    from reports_service.auto_scam.rules import Action, Condition, Rule, apply_rules_traced, default_rules, run_rules
+
+    # the default rule "interested, short call: HOT -> WARM", exactly as in the user's setup
+    out, trace = apply_rules_traced(default_rules(), {"STAGE_CODE": "INTERESTED", "setupTime": 20}, {"INTEREST_CLASSIFICATION": "HOT"})
+    assert out == {"INTEREST_CLASSIFICATION": "WARM"}
+    assert len(trace) == 1 and trace[0]["index"] == 2
+    assert trace[0]["changes"] == [{"field": "INTEREST_CLASSIFICATION", "from": "HOT", "to": "WARM"}]
+    assert [(c["field"], c["op"], c["value"], c["actual"], c["met"]) for c in trace[0]["conditions"]] == [
+        ("setupTime", "lt", 35, 20, True), ("STAGE_CODE", "eq", "INTERESTED", "INTERESTED", True),
+        ("INTEREST_CLASSIFICATION", "eq", "HOT", "HOT", True),
+    ]
+    # nothing applies -> empty trace (the model's answer stands)
+    assert apply_rules_traced(default_rules(), {"STAGE_CODE": "NEUTRAL", "setupTime": 90}, {"INTEREST_CLASSIFICATION": "HOT"})[1] == []
+    # an invalid / missing score is replaced, and the trace says what it was
+    _, t = apply_rules_traced(default_rules(), {"STAGE_CODE": "NEUTRAL"}, {"INTEREST_CLASSIFICATION": "bogus"})
+    assert t[0]["changes"] == [{"field": "INTEREST_CLASSIFICATION", "from": "bogus", "to": "COLD"}]
+    _, t = apply_rules_traced(default_rules(), {"STAGE_CODE": "NEUTRAL"}, {})
+    assert t[0]["changes"] == [{"field": "INTEREST_CLASSIFICATION", "from": None, "to": "COLD"}]
+
+    # a rule that fires but sets a value the field already has changed nothing: fired, but not in the trace
+    same = Rule(name="noop", when=[Condition(field="STAGE_CODE", op="eq", value="DSCN")], then=[Action(field="INTEREST_CLASSIFICATION", value="COLD")])
+    out, fired, trace = run_rules([same], {"STAGE_CODE": "DSCN"}, {"INTEREST_CLASSIFICATION": "COLD"})
+    assert fired == ["noop"] and trace == []
+
+    # "any" mode shows which conditions were met; a later rule sees (and is explained by) an earlier rule's change
+    r1 = Rule(name="first", match="any", when=[Condition(field="STAGE_CODE", op="eq", value="BUSY"), Condition(field="setupTime", op="lt", value=10)],
+              then=[Action(field="DISPOSITION", value="RETRY")])
+    r2 = Rule(name="second", when=[Condition(field="DISPOSITION", op="eq", value="RETRY")], then=[Action(field="STAGE_CODE", value="REDIAL")])
+    _, trace = apply_rules_traced([r1, r2], {"STAGE_CODE": "BUSY", "setupTime": 50}, {})
+    assert [e["rule"] for e in trace] == ["first", "second"]
+    assert [c["met"] for c in trace[0]["conditions"]] == [True, False] and trace[0]["match"] == "any"
+    assert trace[1]["conditions"][0]["actual"] == "RETRY"  # saw the value the first rule just set
+    # a rule with no name is labelled by its position, a disabled rule never shows up
+    unnamed = Rule(when=[], then=[Action(field="X", value="1")])
+    off = Rule(name="off", enabled=False, when=[], then=[Action(field="Y", value="1")])
+    assert [e["rule"] for e in apply_rules_traced([off, unnamed], {}, {})[1]] == ["Rule 2"]
+
+
+async def test_results_keep_the_model_output_and_the_rule_trace(app, client, fake_scam):
+    _perms(app, "auto_scam.view", "auto_scam.manage", "auto_scam.run")
+    raw = json.dumps([
+        {"customerCRTId": "changed", "STAGE_CODE": "INTERESTED", "setupTime": 10, "INTEREST_CLASSIFICATION": "WARM", "conversation_log": []},
+        {"customerCRTId": "stands", "STAGE_CODE": "NEUTRAL", "setupTime": 90, "INTEREST_CLASSIFICATION": "WARM", "conversation_log": []},
+        {"customerCRTId": "dscn", "STAGE_CODE": "DSCN", "setupTime": 90, "INTEREST_CLASSIFICATION": "WARM", "conversation_log": []},
+    ])
+    await _upload(client, "trace", raw)
+    fake_scam["extra"] = {"REASON": "because"}  # the fake model always answers HOT + a reason
+    await _run(client, "trace")
+
+    rows = {r["customerCRTId"]: r for r in _unwrap(await client.get(f"{BASE}/datasets/trace/results", params=P))["items"]}
+    ch, st, ds = rows["changed"], rows["stands"], rows["dscn"]
+    # what the model said, before the rules
+    assert {f["field"]: f["value"] for f in ch["llm_fields"]} == {"INTEREST_CLASSIFICATION": "HOT", "REASON": "because"}
+    # the final value after the rules, and why it differs
+    assert {f["field"]: f["updated"] for f in ch["fields"]}["INTEREST_CLASSIFICATION"] == "WARM"
+    assert ch["rule_changed"] is True and ch["rules_recorded"] is True
+    assert ch["rule_trace"][0]["changes"] == [{"field": "INTEREST_CLASSIFICATION", "from": "HOT", "to": "WARM"}]
+    assert all(c["met"] for c in ch["rule_trace"][0]["conditions"]) and ch["rule_trace"][0]["conditions"][0]["actual"] == 10
+    # the model's answer stood: recorded, but no rule changed it
+    assert st["rule_changed"] is False and st["rules_recorded"] is True and st["rule_trace"] == []
+    assert {f["field"]: f["updated"] for f in st["fields"]}["INTEREST_CLASSIFICATION"] == "HOT"
+    # another rule: DSCN forces COLD
+    assert ds["rule_trace"][0]["changes"] == [{"field": "INTEREST_CLASSIFICATION", "from": "HOT", "to": "COLD"}]
+    assert ds["rule_trace"][0]["conditions"][0]["actual"] == "DSCN"
+
+    listed = {i["customerCRTId"]: i for i in _unwrap(await client.get(f"{BASE}/datasets/trace/records", params=P))["items"]}
+    assert (listed["changed"]["rule_changed"], listed["stands"]["rule_changed"], listed["dscn"]["rule_changed"]) == (True, False, True)
+
+    # a result saved before the trace existed is reported as "not recorded", not as "no rule applied"
+    from reports_service.auto_scam.model import AutoScamResult
+    legacy = await AutoScamResult.find_one({"customer_crt_id": "stands"})
+    legacy.llm_fields, legacy.rule_trace = [], []
+    await legacy.save()
+    old = {r["customerCRTId"]: r for r in _unwrap(await client.get(f"{BASE}/datasets/trace/results", params=P))["items"]}["stands"]
+    assert old["rules_recorded"] is False and old["rule_trace"] == []
+
+
+async def test_field_mapper_can_show_the_model_output_and_what_the_rules_changed(app, client, fake_scam):
+    _perms(app, "auto_scam.view", "auto_scam.manage", "auto_scam.run")
+    raw = json.dumps([
+        {"customerCRTId": "changed", "STAGE_CODE": "INTERESTED", "setupTime": 20, "customerName": "Asha", "INTEREST_CLASSIFICATION": "WARM", "conversation_log": []},
+        {"customerCRTId": "stands", "STAGE_CODE": "NEUTRAL", "setupTime": 90, "customerName": "Ravi", "INTEREST_CLASSIFICATION": "WARM", "conversation_log": []},
+    ])
+    await _upload(client, "rc", raw)
+    fake_scam["extra"] = {"REASON": "because"}  # the model always says HOT + a reason
+    cfg = _unwrap(await client.get(f"{BASE}/datasets/rc/config", params=P))
+    mapper = [
+        {"label": "Customer", "origin": "conversation", "key": "customerName"},
+        {"label": "Final score", "origin": "analytics", "key": "INTEREST_CLASSIFICATION"},
+        {"label": "Model said", "origin": "model", "key": "INTEREST_CLASSIFICATION"},
+        {"label": "Model reason", "origin": "model", "key": "REASON"},
+        {"label": "Changed by rules", "origin": "rules", "key": "changes"},
+        {"label": "Rules", "origin": "rules", "key": "rules"},
+        {"label": "Because", "origin": "rules", "key": "conditions"},
+        {"label": "Rule changed?", "origin": "rules", "key": "changed"},
+    ]
+    assert (await client.put(f"{BASE}/datasets/rc/config", params=P, json={**cfg, "field_mapper": mapper})).json()["code"] == 200
+    for bad in ({"label": "x", "origin": "rules", "key": "nonsense"}, {"label": "x", "origin": "rules", "key": "REASON"}, {"label": "x", "origin": "elsewhere", "key": "a"}):
+        assert (await client.put(f"{BASE}/datasets/rc/config", params=P, json={**cfg, "field_mapper": [bad]})).json()["code"] == 422
+
+    # before any run only the conversation column has a value (history does not exist yet)
+    pre = {i["customerCRTId"]: i for i in _unwrap(await client.get(f"{BASE}/datasets/rc/records", params=P))["items"]}
+    assert pre["changed"]["mapped"] == {"Customer": "Asha"}
+
+    await _run(client, "rc")
+    items = {i["customerCRTId"]: i for i in _unwrap(await client.get(f"{BASE}/datasets/rc/records", params=P))["items"]}
+    ch = items["changed"]["mapped"]
+    assert ch["Customer"] == "Asha" and ch["Final score"] == "WARM"
+    assert ch["Model said"] == "HOT" and ch["Model reason"] == "because"          # what the model said, before the rules
+    assert ch["Changed by rules"] == "INTEREST_CLASSIFICATION: HOT → WARM"    # the change
+    assert ch["Rules"] == "Interested, but call shorter than 35s: HOT -> WARM"
+    assert ch["Because"] == "setupTime < 35 (was 20); STAGE_CODE equals INTERESTED (was INTERESTED); INTEREST_CLASSIFICATION equals HOT (was HOT)"
+    assert ch["Rule changed?"] == "Yes"
+    # the model's answer stood
+    st = items["stands"]["mapped"]
+    assert st["Final score"] == "HOT" and st["Model said"] == "HOT"
+    assert st["Changed by rules"] == "No rule applied" and st["Rule changed?"] == "No" and st["Because"] == "" and st["Rules"] == ""
+
+    # the Results tab gets the same columns
+    res = _unwrap(await client.get(f"{BASE}/datasets/rc/results", params=P))
+    assert [c["label"] for c in res["columns"]] == [m["label"] for m in mapper]
+    row = next(r for r in res["items"] if r["customerCRTId"] == "changed")
+    by = {m["label"]: m for m in row["mapped"]}
+    assert by["Changed by rules"]["value"] == "INTEREST_CLASSIFICATION: HOT → WARM" and by["Changed by rules"]["origin"] == "rules"
+    assert by["Model said"]["value"] == "HOT" and by["Model said"]["found"] is True
+
+    # the mapper's sources list the model keys and the four rule values
+    src = _unwrap(await client.get(f"{BASE}/datasets/rc/mapper-sources", params=P))
+    assert {k["path"] for k in src["model"]} == {"INTEREST_CLASSIFICATION", "REASON"}
+    assert [k["path"] for k in src["rules"]] == ["changes", "rules", "conditions", "changed"]
+
+    # a result saved before the history was kept shows nothing for these columns (not "No rule applied")
+    from reports_service.auto_scam.model import AutoScamResult
+    legacy = await AutoScamResult.find_one({"customer_crt_id": "stands"})
+    legacy.llm_fields, legacy.rule_trace = [], []
+    await legacy.save()
+    old = {i["customerCRTId"]: i for i in _unwrap(await client.get(f"{BASE}/datasets/rc/records", params=P))["items"]}["stands"]["mapped"]
+    assert "Changed by rules" not in old and "Model said" not in old and old["Final score"] == "HOT" and old["Customer"] == "Ravi"
