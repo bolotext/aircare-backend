@@ -60,20 +60,57 @@ async def with_analytics(flt: dict, aircare_project_id, file_name: str, mode: st
     return {"$and": [flt, clause]}
 
 
-def derive_call_date(rec: dict) -> str | None:
-    """The call's date as YYYY-MM-DD: `tempDate` (DD/MM/YYYY) if present, else the first message's timestamp (UTC)."""
-    temp = str(rec.get("tempDate") or "").strip()
+_DATE_FORMATS = ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%Y/%m/%d", "%d/%m/%y", "%d-%m-%y")
+
+
+def _parse_date_text(text: str) -> str | None:
+    """YYYY-MM-DD from a date string, tolerating a trailing time ("26/10/2026 14:03", "2026-10-26T14:03:00Z")."""
+    text = text.strip()
+    if not text:
+        return None
+    head = text.replace("T", " ").split(" ")[0]
+    for fmt in _DATE_FORMATS:
+        try:
+            return datetime.strptime(head, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return None
+
+
+def _parse_timestamp(ts) -> str | None:
+    if isinstance(ts, bool):
+        return None
+    if isinstance(ts, str):
+        ts = ts.strip()
+        try:
+            ts = float(ts)
+        except ValueError:
+            return _parse_date_text(ts)
+    if not isinstance(ts, (int, float)):
+        return None
+    if ts > 1e17:    # nanoseconds
+        ts /= 1e9
+    elif ts > 1e14:  # microseconds
+        ts /= 1e6
+    elif ts > 1e11:  # milliseconds
+        ts /= 1e3
     try:
-        return datetime.strptime(temp, "%d/%m/%Y").strftime("%Y-%m-%d")
-    except ValueError:
-        pass
+        return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def derive_call_date(rec: dict) -> str | None:
+    """The call's date as YYYY-MM-DD: `tempDate` if it parses (DD/MM/YYYY first, other common formats too), else the
+    first message with a usable timestamp (seconds / ms / us / ISO text; UTC)."""
+    day = _parse_date_text(str(rec.get("tempDate") or ""))
+    if day:
+        return day
     for msg in rec.get("conversation_log") or []:
-        ts = msg.get("timestamp") if isinstance(msg, dict) else None
-        if isinstance(ts, (int, float)) and not isinstance(ts, bool):
-            try:
-                return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
-            except (OverflowError, OSError, ValueError):
-                return None
+        if isinstance(msg, dict) and msg.get("timestamp") is not None:
+            day = _parse_timestamp(msg["timestamp"])
+            if day:
+                return day
     return None
 
 
@@ -84,9 +121,11 @@ async def ensure_indexes() -> None:
     await col.create_index([("customerCRTId", 1)], name="customerCRTId_1")
     await col.create_index([("aircare_project_id", 1), ("project_id", 1), ("customerCRTId", 1)], name="project_file_customerCRTId")
     await col.create_index([("aircare_project_id", 1), ("project_id", 1), ("call_date", 1)], name="project_file_call_date")
-    # conversations uploaded before call_date existed: derive it once (documents without a date get null, so they are not revisited)
-    async for d in col.find({"call_date": {"$exists": False}}, {"tempDate": 1, "conversation_log": 1}):
-        await col.update_one({"_id": d["_id"]}, {"$set": {"call_date": derive_call_date(d)}})
+    # conversations uploaded before call_date existed (or when it could not be derived): (re)derive it at startup
+    async for d in col.find({"$or": [{"call_date": {"$exists": False}}, {"call_date": None}]}, {"tempDate": 1, "conversation_log": 1, "call_date": 1}):
+        day = derive_call_date(d)
+        if day is not None or "call_date" not in d:  # still undated documents already hold null: leave them
+            await col.update_one({"_id": d["_id"]}, {"$set": {"call_date": day}})
 
 
 def record_key(doc: dict) -> str:

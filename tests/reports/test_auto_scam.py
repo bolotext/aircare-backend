@@ -1038,3 +1038,13 @@ async def test_record_rows_for_csv_export(app, client, fake_scam, monkeypatch):
     assert len(exact["items"]) == 6 and exact["truncated"] is False  # exactly at the cap is not truncated
     _perms(app, "auto_scam.manage")
     assert (await rows(record_ids=[ids["c1"]]))["code"] == 403
+
+
+def test_call_date_tolerates_other_formats():
+    from reports_service.auto_scam.records import derive_call_date
+
+    assert derive_call_date({"tempDate": "26/10/2026 14:03"}) == "2026-10-26"
+    assert derive_call_date({"tempDate": "2026-10-26"}) == "2026-10-26"
+    assert derive_call_date({"conversation_log": [{"timestamp": 1792987551061}]}) == "2026-10-26"  # milliseconds
+    assert derive_call_date({"conversation_log": [{"timestamp": "2026-10-26T10:00:00Z"}]}) == "2026-10-26"
+    assert derive_call_date({"conversation_log": [{"timestamp": "1792987551.06"}]}) == "2026-10-26"
