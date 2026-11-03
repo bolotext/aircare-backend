@@ -769,6 +769,30 @@ async def dataset_results(
     return success_response(data={"columns": [m.model_dump() for m in ds.config.field_mapper], "items": items, "total": total})
 
 
+@router.get("/datasets/{file_name}/results/ids", summary="Ids of every result (or every changed one), for 'select all' across pages")
+async def result_ids(
+    file_name: str,
+    project_id: str = Query(...),
+    changed_only: bool = Query(False),
+    identity: IdentityContext = Depends(require_permission("auto_scam.view")),
+) -> dict:
+    ensure_project_access(identity, project_id)
+    ds = await _dataset(project_id, file_name)
+    base = {"aircare_project_id": ds.aircare_project_id, "file_name": file_name}
+    if not changed_only:
+        cursor = AutoScamResult.get_pymongo_collection().find(base, {"_id": 1}).sort("_id", 1)
+        return success_response(data={"ids": [str(d["_id"]) async for d in cursor]})
+    ids: list[str] = []
+    last_id = None
+    while True:  # "changed" depends on the conversation, so scan in chunks
+        rows = await AutoScamResult.find({**base, "_id": {"$gt": last_id}} if last_id else base).sort("+_id").limit(2000).to_list()
+        if not rows:
+            break
+        last_id = rows[-1].id
+        ids += [it["id"] for it in await _result_items(ds, rows) if it["changed"]]
+    return success_response(data={"ids": ids})
+
+
 class ResultsByIdsBody(BaseModel):
     project_id: str
     result_ids: list[str] = Field(min_length=1, max_length=RESULTS_MAX_LIMIT)
