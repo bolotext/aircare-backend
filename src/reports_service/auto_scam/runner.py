@@ -26,6 +26,7 @@ SCAM_DIR = Path(__file__).resolve().parent / "scam"  # scam.py + the bundled ana
 STALE_AFTER = timedelta(seconds=90)
 LOG_TAIL_CHARS = 20_000
 PROGRESS_LOG_EVERY = 25
+RUN_BATCH = 5000  # conversations analysed per run; run again for the next batch (analysed ones are skipped)
 
 _tasks: set[asyncio.Task] = set()
 # One run at a time per project: total OpenAI concurrency is then exactly that run's "Parallel workers" setting.
@@ -145,9 +146,13 @@ async def _execute(run_id: str) -> None:
         if scanned % 5000 == 0:
             await _set(run_id, heartbeat_at=utcnow(), log=f"scanning conversations… {scanned}")
 
+    remaining = max(0, len(todo) - RUN_BATCH)
+    todo = todo[:RUN_BATCH]
     scope = f"{len(run.record_ids)} selected" if run.record_ids else ("matching the filters" if run.filters else "whole file")
     log: list[str] = [f"scope: {scope}", f"{len(todo)} to analyse, {skipped} already analysed (skipped)"
                       f"{' [re-analyse all]' if run.force else ''}; {run.config.workers} workers"]
+    if remaining:
+        log.append(f"batch limit: analysing the first {RUN_BATCH}; {remaining} more are left - run again for the next {min(RUN_BATCH, remaining)}")
     await _set(run_id, total=len(todo), skipped=skipped, heartbeat_at=utcnow(), log="\n".join(log))
 
     cancelled = asyncio.Event()

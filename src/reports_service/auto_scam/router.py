@@ -71,7 +71,7 @@ class RunBody(BaseModel):
     project_id: str
     force: bool = Field(False, description="Re-analyse conversations that already have a result (matched by customerCRTId).")
     # Optional subset (needs exactly one file): selected conversations, or every conversation matching `q`.
-    record_ids: list[str] = Field(default_factory=list, max_length=1000)
+    record_ids: list[str] = Field(default_factory=list, max_length=5000)
     all_matching: bool = Field(False, description="Run every conversation matching `filters` (the whole file if none).")
     filters: RecordFilters = Field(default_factory=RecordFilters)
     file_names: list[str] = Field(min_length=1, max_length=50)
@@ -434,6 +434,31 @@ async def _table_items(ds: AutoScamDataset, docs: list[dict]) -> list[dict]:
 
 
 MAX_TABLE_ROWS = 20_000
+MAX_NEXT_IDS = 5000
+
+
+class NextIdsBody(BaseModel):
+    project_id: str
+    filters: RecordFilters = Field(default_factory=RecordFilters)
+    exclude: list[str] = Field(default_factory=list, max_length=20000, description="Ids to skip (already selected).")
+    count: int = Field(ge=1, le=MAX_NEXT_IDS)
+
+
+@router.post("/datasets/{file_name}/records/next-ids", summary="The next N conversations (in table order) matching the filters, skipping `exclude`")
+async def next_record_ids(
+    file_name: str, body: NextIdsBody, identity: IdentityContext = Depends(require_permission("auto_scam.view"))
+) -> dict:
+    ensure_project_access(identity, body.project_id)
+    ds = await _dataset(body.project_id, file_name)
+    flt = await _record_filter(ds, body.filters.model_dump())
+    try:
+        skip_ids = [ObjectId(r) for r in body.exclude]
+    except Exception:
+        raise BadRequestError("record id is not valid", {"field": "exclude"})
+    if skip_ids:
+        flt = {"$and": [flt, {"_id": {"$nin": skip_ids}}]}
+    ids = [str(d["_id"]) async for d in records_collection().find(flt, {"_id": 1}).sort("_id", 1).limit(body.count)]
+    return success_response(data={"ids": ids})
 
 
 class RecordRowsBody(BaseModel):
@@ -537,6 +562,18 @@ async def start_runs(body: RunBody, identity: IdentityContext = Depends(require_
             ObjectId(rid)
     except Exception:
         raise BadRequestError("record id is not valid", {"field": "record_ids"})
+    if body.force:  # a forced run skips nothing, so batches of RUN_BATCH would repeat the same conversations
+        for name in dict.fromkeys(body.file_names):
+            ds0 = await AutoScamDataset.find_one({"aircare_project_id": pid, "file_name": name})
+            if ds0 is None:
+                continue
+            if body.record_ids:
+                n = len(set(body.record_ids))
+            else:
+                flt0 = await _record_filter(ds0, body.filters.model_dump() if body.all_matching else None)
+                n = await records_collection().count_documents(flt0)
+            if n > runner.RUN_BATCH:
+                raise BadRequestError(f"Re-analyse runs at most {runner.RUN_BATCH} conversations at a time ({n} selected). Select fewer, or untick re-analyse.")
     started, skipped = [], []
     for name in dict.fromkeys(body.file_names):
         ds = await AutoScamDataset.find_one({"aircare_project_id": pid, "file_name": name})
