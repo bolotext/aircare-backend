@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from bson import ObjectId
 
@@ -17,6 +17,7 @@ def records_collection():
 
 
 EMPTY_VALUE = "__empty__"  # filter choice meaning "the field is null / missing / blank"
+MAX_DATE_SPAN_DAYS = 8000
 FILTER_FIELDS = (("dispositions", "DISPOSITION"), ("stage_codes", "STAGE_CODE"), ("classifications", "INTEREST_CLASSIFICATION"))
 
 
@@ -38,8 +39,29 @@ def record_filter(aircare_project_id, file_name: str, filters: dict | None = Non
                 flt.setdefault("$and", []).append({"$or": blank + ([{field: {"$in": values}}] if values else [])})
     date_range = {op: f[key] for key, op in (("date_from", "$gte"), ("date_to", "$lte")) if f.get(key)}
     if date_range:
-        flt["call_date"] = date_range
+        flt.setdefault("$and", []).append(_date_clause(f.get("date_from"), f.get("date_to"), date_range))
     return flt
+
+
+def _date_clause(date_from: str | None, date_to: str | None, call_date_range: dict) -> dict:
+    """Date filter on `tempDate` (DD/MM/YYYY text, so it is matched as a list of days, not a string range). Records with no
+    tempDate fall back to the derived `call_date`."""
+    no_temp = {"$or": [{"tempDate": {"$exists": False}}, {"tempDate": None}, {"tempDate": {"$regex": r"^\s*$"}}]}
+    fallback = {"$and": [no_temp, {"call_date": call_date_range}]}
+    try:
+        start = datetime.strptime(date_from, "%Y-%m-%d") if date_from else None
+        end = datetime.strptime(date_to, "%Y-%m-%d") if date_to else None
+    except ValueError:
+        return {"call_date": call_date_range}
+    if start and not end:
+        end = datetime.combine(date.today(), time.min) + timedelta(days=366)
+    if end and not start:
+        start = datetime.combine(date.today(), time.min) - timedelta(days=3650)
+    days = (end - start).days + 1
+    if days < 1 or days > MAX_DATE_SPAN_DAYS:
+        return {"call_date": call_date_range}
+    texts = [(start + timedelta(days=i)).strftime("%d/%m/%Y") for i in range(days)]
+    return {"$or": [{"tempDate": {"$in": texts}}, fallback]}
 
 
 async def with_analytics(flt: dict, aircare_project_id, file_name: str, mode: str | None) -> dict:
