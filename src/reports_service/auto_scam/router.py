@@ -22,7 +22,7 @@ from reports_service.auto_scam import runner
 from reports_service.auto_scam.model import AutoScamConfig, AutoScamDataset, AutoScamResult, AutoScamRun, utcnow
 from reports_service.auto_scam.rules import Rule, apply_rules_traced, default_rules, run_rules
 from reports_service.auto_scam.mapper import analytics_paths, apply_mapper, changed_fields, stage_codes
-from reports_service.auto_scam.records import KEY_PROJECTION, derive_call_date, record_filter, record_key, records_collection
+from reports_service.auto_scam.records import KEY_PROJECTION, derive_call_date, record_filter, record_key, records_collection, with_analytics
 from reports_service.core.deps import ensure_project_access, require_permission
 from reports_service.core.users_client import IdentityContext
 
@@ -64,6 +64,7 @@ class RecordFilters(BaseModel):
     classifications: list[str] = Field(default_factory=list, max_length=100)
     date_from: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     date_to: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    analytics: str | None = Field(None, pattern=r"^(done|pending)$", description="done = has analytics, pending = not analysed yet.")
 
 
 class RunBody(BaseModel):
@@ -339,8 +340,9 @@ async def put_config(
 
 
 # ------------------------------------------------------------------ records CRUD
-def _record_filter(ds: AutoScamDataset, filters: dict | None = None) -> dict[str, Any]:
-    return record_filter(ds.aircare_project_id, ds.file_name, filters)
+async def _record_filter(ds: AutoScamDataset, filters: dict | None = None) -> dict[str, Any]:
+    flt = record_filter(ds.aircare_project_id, ds.file_name, filters)
+    return await with_analytics(flt, ds.aircare_project_id, ds.file_name, (filters or {}).get("analytics"))
 
 
 async def _drop_results(pid, file_name: str, keys: list[str]) -> None:
@@ -362,7 +364,7 @@ async def bulk_delete_records(
     ensure_project_access(identity, body.project_id)
     ds = await _dataset(body.project_id, file_name)
     if body.all_matching:
-        flt = _record_filter(ds, body.filters.model_dump())
+        flt = await _record_filter(ds, body.filters.model_dump())
     else:
         if not body.record_ids:
             raise BadRequestError("Select at least one conversation")
@@ -370,7 +372,7 @@ async def bulk_delete_records(
             oids = [ObjectId(r) for r in body.record_ids]
         except Exception:
             raise BadRequestError("record id is not valid", {"field": "record_ids"})
-        flt = {**_record_filter(ds), "_id": {"$in": oids}}  # scoped to this dataset: foreign ids are ignored
+        flt = {**await _record_filter(ds), "_id": {"$in": oids}}  # scoped to this dataset: foreign ids are ignored
     col = records_collection()
     docs = await col.find(flt, KEY_PROJECTION).to_list(None)
     deleted = (await col.delete_many({"_id": {"$in": [d["_id"] for d in docs]}})).deleted_count if docs else 0
@@ -388,12 +390,13 @@ async def list_records(
     classifications: list[str] = Query(default_factory=list),
     date_from: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     date_to: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    analytics: str | None = Query(None, pattern=r"^(done|pending)$"),
     identity: IdentityContext = Depends(require_permission("auto_scam.view")),
 ) -> dict:
     ensure_project_access(identity, project_id)
     ds = await _dataset(project_id, file_name)
-    flt = _record_filter(ds, {"q": q, "dispositions": dispositions, "stage_codes": stage_codes,
-                              "classifications": classifications, "date_from": date_from, "date_to": date_to})
+    flt = await _record_filter(ds, {"q": q, "dispositions": dispositions, "stage_codes": stage_codes,
+                              "classifications": classifications, "date_from": date_from, "date_to": date_to, "analytics": analytics})
     col = records_collection()
     total = await col.count_documents(flt)
     page = await col.find(flt).sort("_id", 1).skip(skip).limit(limit).to_list(limit)
@@ -449,7 +452,7 @@ async def record_rows(
     ensure_project_access(identity, body.project_id)
     ds = await _dataset(body.project_id, file_name)
     if body.all_matching:
-        flt = _record_filter(ds, body.filters.model_dump())
+        flt = await _record_filter(ds, body.filters.model_dump())
     else:
         if not body.record_ids:
             raise BadRequestError("Select at least one conversation")
@@ -457,7 +460,7 @@ async def record_rows(
             oids = [ObjectId(r) for r in body.record_ids]
         except Exception:
             raise BadRequestError("record id is not valid", {"field": "record_ids"})
-        flt = {**_record_filter(ds), "_id": {"$in": oids}}  # scoped to this file: foreign ids are ignored
+        flt = {**await _record_filter(ds), "_id": {"$in": oids}}  # scoped to this file: foreign ids are ignored
     items: list[dict] = []
     chunk: list[dict] = []
     truncated = False
@@ -613,7 +616,7 @@ async def mapper_sources(
     rows = await AutoScamResult.find({"aircare_project_id": ds.aircare_project_id, "file_name": file_name, "fields": {"$ne": []}}) \
         .sort("-_id").limit(FIELD_VALUE_SAMPLE).to_list()
     hidden = {"conversation_log": 0, "aircare_project_id": 0, "project_id": 0, "uploaded_at": 0, "call_date": 0, "source_id": 0}
-    docs = await records_collection().find(_record_filter(ds), hidden).sort("_id", -1).limit(FIELD_VALUE_SAMPLE).to_list(FIELD_VALUE_SAMPLE)
+    docs = await records_collection().find(await _record_filter(ds), hidden).sort("_id", -1).limit(FIELD_VALUE_SAMPLE).to_list(FIELD_VALUE_SAMPLE)
     for d in docs:
         d.pop("_id", None)
     return success_response(data={

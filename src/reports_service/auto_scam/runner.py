@@ -17,7 +17,7 @@ from bson import ObjectId
 
 from reports_service.auto_scam.model import AutoScamResult, AutoScamRun, utcnow
 from reports_service.auto_scam.rules import apply_rules_traced
-from reports_service.auto_scam.records import record_filter, record_key, records_collection
+from reports_service.auto_scam.records import KEY_FIELDS, record_filter, record_key, records_collection, with_analytics
 
 logger = logging.getLogger(__name__)
 
@@ -120,13 +120,18 @@ async def _execute(run_id: str) -> None:
 
     client = _make_client()  # raises if the Azure OpenAI credentials are missing -> run marked failed
     done = set() if run.force else await _analysed_keys(run)
-    todo: list[tuple[str, dict]] = []
+    # Heartbeat first: scanning a big file takes a while and the run must not look stuck in "queued".
+    await _set(run_id, status="running", started_at=utcnow(), heartbeat_at=utcnow(), log="scanning conversations…")
+    # Only ids + keys are held in memory (50k full conversations would not fit); each worker loads its own document.
+    todo: list[tuple[str, ObjectId]] = []
     seen: set[str] = set()
     skipped = 0
     flt = record_filter(run.aircare_project_id, run.file_name, run.filters)
+    flt = await with_analytics(flt, run.aircare_project_id, run.file_name, (run.filters or {}).get("analytics"))
     if run.record_ids:  # explicit selection (ids outside this file never match)
         flt["_id"] = {"$in": [ObjectId(i) for i in run.record_ids]}
-    cursor = records_collection().find(flt)
+    cursor = records_collection().find(flt, {f: 1 for f in KEY_FIELDS})
+    scanned = 0
     async for doc in cursor:
         key = record_key(doc)
         if key in seen:  # duplicate customerCRTId within the file: analysed once
@@ -135,13 +140,15 @@ async def _execute(run_id: str) -> None:
         if key in done:
             skipped += 1
         else:
-            todo.append((key, doc))
+            todo.append((key, doc["_id"]))
+        scanned += 1
+        if scanned % 5000 == 0:
+            await _set(run_id, heartbeat_at=utcnow(), log=f"scanning conversations… {scanned}")
 
     scope = f"{len(run.record_ids)} selected" if run.record_ids else ("matching the filters" if run.filters else "whole file")
     log: list[str] = [f"scope: {scope}", f"{len(todo)} to analyse, {skipped} already analysed (skipped)"
                       f"{' [re-analyse all]' if run.force else ''}; {run.config.workers} workers"]
-    await _set(run_id, status="running", started_at=utcnow(), total=len(todo), skipped=skipped,
-               heartbeat_at=utcnow(), log="\n".join(log))
+    await _set(run_id, total=len(todo), skipped=skipped, heartbeat_at=utcnow(), log="\n".join(log))
 
     cancelled = asyncio.Event()
     counts = {"ok": 0, "failed": 0}
@@ -160,12 +167,16 @@ async def _execute(run_id: str) -> None:
 
     loop = asyncio.get_running_loop()
     executor = ThreadPoolExecutor(max_workers=run.config.workers)
-    sem = asyncio.Semaphore(run.config.workers)
 
-    async def one(key: str, doc: dict) -> None:
-        async with sem:
-            if cancelled.is_set():
-                return
+    async def one(key: str, oid: ObjectId) -> None:
+        if cancelled.is_set():
+            return
+        doc = await records_collection().find_one({"_id": oid})
+        if doc is None:  # deleted while the run was going
+            counts["failed"] += 1
+            log.append(f"{key}: failed - conversation no longer exists")
+            return
+        if True:
             conversation = {k: v for k, v in doc.items() if k not in INTERNAL_FIELDS}
             analytics = await loop.run_in_executor(executor, _analyze, conversation, client, run.prompt_text, run.config.max_retries)
             llm, trace = dict(analytics), []
@@ -182,7 +193,20 @@ async def _execute(run_id: str) -> None:
 
     watch = asyncio.create_task(watcher())
     try:
-        await asyncio.gather(*(one(k, d) for k, d in todo))
+        queue: asyncio.Queue = asyncio.Queue()
+        for item in todo:
+            queue.put_nowait(item)
+
+        async def worker() -> None:  # a fixed pool, not one task per conversation
+            while not queue.empty():
+                key, oid = queue.get_nowait()
+                try:
+                    await one(key, oid)
+                except Exception as exc:  # noqa: BLE001 - one bad conversation must not kill the run
+                    counts["failed"] += 1
+                    log.append(f"{key}: failed - {exc}")
+
+        await asyncio.gather(*(worker() for _ in range(min(run.config.workers, max(1, len(todo))))))
     finally:
         watch.cancel()
         executor.shutdown(wait=False, cancel_futures=True)

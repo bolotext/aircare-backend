@@ -36,6 +36,24 @@ def record_filter(aircare_project_id, file_name: str, filters: dict | None = Non
     return flt
 
 
+async def with_analytics(flt: dict, aircare_project_id, file_name: str, mode: str | None) -> dict:
+    """Narrow `flt` to conversations whose analytics are done ("done": a successful result exists for their key) or
+    not done ("pending"). Results are keyed by customerCRTId (falling back to conversation_id / sender_id), so the key
+    list is matched against those fields. Any other `mode` leaves `flt` as it is."""
+    if mode not in ("done", "pending"):
+        return flt
+    from reports_service.auto_scam.model import AutoScamResult  # local: model imports nothing from here, keep it cheap
+
+    cursor = AutoScamResult.get_pymongo_collection().find(
+        {"aircare_project_id": aircare_project_id, "file_name": file_name, "error": None, "fields": {"$ne": []}},
+        {"customer_crt_id": 1},
+    )
+    keys = [d["customer_crt_id"] async for d in cursor]
+    match = [{f: {"$in": keys}} for f in KEY_FIELDS]
+    clause = {"$or": match} if mode == "done" else {"$nor": match}
+    return {"$and": [flt, clause]}
+
+
 def derive_call_date(rec: dict) -> str | None:
     """The call's date as YYYY-MM-DD: `tempDate` (DD/MM/YYYY) if present, else the first message's timestamp (UTC)."""
     temp = str(rec.get("tempDate") or "").strip()
