@@ -3,7 +3,7 @@
 Each mapping is ONE column: a `label` (its title), an `origin` and a `key` (a key, or a dotted path like "result.reason"):
   analytics     a key of the (final) analytics JSON, e.g. INTEREST_CLASSIFICATION or REASON
   model         the same keys as the model first returned them, BEFORE the rules changed anything
-  rules         what the rules did: key is one of changes / rules / conditions / changed
+  rules         what the rules did: key is one of changes / rules / conditions / changed / details
   conversation  a field of the uploaded record, e.g. a customer name
 
 Values are looked up when results are read, from the stored analytics and the record, so changing the mapper
@@ -35,7 +35,7 @@ def same(a: Any, b: Any) -> bool:
     return a is not None and b is not None and str(a).strip() == str(b).strip()
 
 
-RULE_KEYS = ("changes", "rules", "conditions", "changed")
+RULE_KEYS = ("changes", "rules", "conditions", "changed", "details")
 _OP_TEXT = {"eq": "equals", "ne": "does not equal", "lt": "<", "lte": "<=", "gt": ">", "gte": ">=", "in": "is one of",
             "not_in": "is not one of", "contains": "contains", "is_empty": "is empty", "not_empty": "is not empty"}
 
@@ -67,6 +67,12 @@ def rule_value(key: str, trace: list[dict]) -> str:
         return "; ".join(e["rule"] for e in trace)
     if key == "conditions":
         return "; ".join(f"{condition_text(c)} (was {_vt(c['actual']) or 'empty'})" for e in trace for c in e["conditions"] if c["met"])
+    if key == "details":  # the whole "Changed by rules" explanation: per rule, what it changed and why
+        parts = []
+        for e in trace:
+            why = ", ".join(f"{condition_text(c)} (was {_vt(c['actual']) or 'empty'})" for c in e["conditions"] if c["met"]) or "always applies"
+            parts.append(f"Rule {e['index']} {e['rule']}: " + "; ".join(change_text(ch) for ch in e["changes"]) + f" because {why}")
+        return " | ".join(parts) or "No rule applied"
     return "Yes" if trace else "No"  # "changed"
 
 
@@ -74,7 +80,7 @@ def apply_mapper(mapper: list, analytics: dict, record: dict, llm: dict | None =
                  recorded: bool = False) -> list[dict]:
     """One entry per mapped column: label, origin, key, value, found. `origin` says where the value comes from:
     "analytics" (the final analytics JSON, after the rules), "model" (what the model said BEFORE the rules, same keys),
-    "rules" (what the rules did: changes / rules / conditions / changed) or "conversation" (a field of the uploaded record).
+    "rules" (what the rules did: changes / rules / conditions / changed / details) or "conversation" (a field of the uploaded record).
     `model` and `rules` need the stored history, so they are not found for results saved before it was kept (`recorded`)."""
     out = []
     for m in mapper:

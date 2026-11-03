@@ -36,7 +36,7 @@ class FieldMapping(BaseModel):
     origin: Literal["analytics", "model", "rules", "conversation"] = Field(
         "analytics",
         description="Where the value comes from: the final analytics JSON; what the model said before the rules (model); "
-        "what the rules changed (rules, with key = changes / rules / conditions / changed); or the uploaded conversation.",
+        "what the rules changed (rules, with key = changes / rules / conditions / changed / details); or the uploaded conversation.",
     )
     key: str = Field(min_length=1, max_length=200, description="Key or dotted path, e.g. 'REASON', 'result.reason' or 'user_context.name'.")
 
