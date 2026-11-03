@@ -793,6 +793,98 @@ async def result_ids(
     return success_response(data={"ids": ids})
 
 
+def _export_value(item: dict, field: str) -> tuple[bool, Any]:
+    """(has, value) of one export field for a result row. Same rules as the UI's JSON viewer: the analytics key itself,
+    else a conversation field the field mapper shows, else the updated stage code / disposition, else the model's own
+    output (LLM_OUTPUT) or what the rules changed (RULE_CHANGES)."""
+    for f in item["fields"]:
+        if f["field"] == field:
+            return True, f["updated"]
+    for m in item["mapped"]:
+        if m["origin"] == "conversation" and m["key"] == field and m["found"]:
+            return True, m["value"]
+    if field == "LLM_OUTPUT" and item["rules_recorded"]:
+        return True, {f["field"]: f["value"] for f in item["llm_fields"]}
+    if field == "RULE_CHANGES" and item["rules_recorded"]:
+        return True, [{"rule": e["rule"], "conditions": e["conditions"], "changes": e["changes"]} for e in item["rule_trace"]]
+    if field == "STAGE_CODE" and item["updated_stage_code"] is not None:
+        return True, item["updated_stage_code"]
+    if field == "DISPOSITION" and item["disposition"] is not None:
+        return True, item["disposition"]
+    return False, None
+
+
+@router.get("/datasets/{file_name}/results/export-fields", summary="Fields that can go into an export's `analytics`")
+async def export_fields(
+    file_name: str,
+    project_id: str = Query(...),
+    identity: IdentityContext = Depends(require_permission("auto_scam.view")),
+) -> dict:
+    """`own` = keys the model/rules produced (default selection); `fields` = those plus the extras that can be added.
+    Worked out from the first 500 results."""
+    ensure_project_access(identity, project_id)
+    ds = await _dataset(project_id, file_name)
+    rows = await AutoScamResult.find({"aircare_project_id": ds.aircare_project_id, "file_name": file_name}).sort("+_id").limit(500).to_list()
+    items = [i for i in await _result_items(ds, rows) if not i["error"] and i["fields"]]
+    own: list[str] = []
+    for i in items:
+        for f in i["fields"]:
+            if f["field"] not in own:
+                own.append(f["field"])
+    out = list(own)
+    for i in items:
+        for m in i["mapped"]:
+            if m["found"] and m["origin"] == "conversation" and m["key"] not in out:
+                out.append(m["key"])
+    out += [f for f in ("STAGE_CODE", "DISPOSITION") if f not in out]
+    if any(i["rules_recorded"] for i in items):
+        out += [f for f in ("LLM_OUTPUT", "RULE_CHANGES") if f not in out]
+    return success_response(data={"fields": out, "own": own})
+
+
+EXPORT_CHUNK = 2000
+
+
+class ExportChunkBody(BaseModel):
+    project_id: str
+    fields: list[str] = Field(min_length=1, max_length=200)
+    result_ids: list[str] = Field(default_factory=list, max_length=EXPORT_CHUNK, description="Export just these results; empty = page through the file.")
+    changed_only: bool = False
+    after: str | None = Field(None, description="Page through the file: results after this id.")
+
+
+@router.post("/datasets/{file_name}/results/export-chunk", summary="One chunk of an export, as JSON Lines text (the UI joins the chunks into a file)")
+async def export_chunk(
+    file_name: str, body: ExportChunkBody, identity: IdentityContext = Depends(require_permission("auto_scam.view"))
+) -> dict:
+    """Returns `lines` (one {"customerCRTId", "analytics": {chosen fields}} per line; failed analyses left out), `count`,
+    and `next` (pass it as `after` for the following chunk; null when the file is finished)."""
+    ensure_project_access(identity, body.project_id)
+    ds = await _dataset(body.project_id, file_name)
+    base = {"aircare_project_id": ds.aircare_project_id, "file_name": file_name}
+    try:
+        if body.result_ids:
+            rows = await AutoScamResult.find({**base, "_id": {"$in": [PydanticObjectId(i) for i in body.result_ids]}}).sort("+_id").to_list()
+            nxt = None
+        else:
+            flt = {**base, "_id": {"$gt": PydanticObjectId(body.after)}} if body.after else base
+            rows = await AutoScamResult.find(flt).sort("+_id").limit(EXPORT_CHUNK).to_list()
+            nxt = str(rows[-1].id) if len(rows) == EXPORT_CHUNK else None
+    except Exception:
+        raise BadRequestError("result id is not valid", {"field": "result_ids"})
+    lines = []
+    for it in await _result_items(ds, rows):
+        if it["error"] or not it["fields"] or (body.changed_only and not it["changed"]):
+            continue
+        analytics = {}
+        for f in body.fields:
+            has, value = _export_value(it, f)
+            if has:
+                analytics[f] = value
+        lines.append(json.dumps({"customerCRTId": it["customerCRTId"], "analytics": analytics}, ensure_ascii=False, default=str))
+    return success_response(data={"lines": "".join(line + "\n" for line in lines), "count": len(lines), "next": nxt})
+
+
 class ResultsByIdsBody(BaseModel):
     project_id: str
     result_ids: list[str] = Field(min_length=1, max_length=RESULTS_MAX_LIMIT)
