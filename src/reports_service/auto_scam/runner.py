@@ -26,7 +26,7 @@ SCAM_DIR = Path(__file__).resolve().parent / "scam"  # scam.py + the bundled ana
 STALE_AFTER = timedelta(seconds=90)
 LOG_TAIL_CHARS = 20_000
 PROGRESS_LOG_EVERY = 25
-RUN_BATCH = 5000  # conversations analysed per run; run again for the next batch (analysed ones are skipped)
+RUN_BATCH = 20000  # conversations analysed per run; run again for the next batch (analysed ones are skipped)
 
 _tasks: set[asyncio.Task] = set()
 # One run at a time per project: total OpenAI concurrency is then exactly that run's "Parallel workers" setting.
