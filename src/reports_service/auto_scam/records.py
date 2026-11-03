@@ -16,6 +16,7 @@ def records_collection():
     return get_client()[get_settings().mongo_db_name][RECORDS_COLLECTION]
 
 
+EMPTY_VALUE = "__empty__"  # filter choice meaning "the field is null / missing / blank"
 FILTER_FIELDS = (("dispositions", "DISPOSITION"), ("stage_codes", "STAGE_CODE"), ("classifications", "INTEREST_CLASSIFICATION"))
 
 
@@ -29,7 +30,12 @@ def record_filter(aircare_project_id, file_name: str, filters: dict | None = Non
         flt["$or"] = [{"customerCRTId": rx}, {"STAGE_CODE": rx}, {"DISPOSITION": rx}, {"INTEREST_CLASSIFICATION": rx}]
     for key, field in FILTER_FIELDS:
         if f.get(key):
-            flt[field] = {"$in": list(f[key])}
+            values = [v for v in f[key] if v != EMPTY_VALUE]
+            if len(values) == len(f[key]):
+                flt[field] = {"$in": values}
+            else:  # "(empty / null)" ticked: also match null, missing and blank values
+                blank = [{field: None}, {field: {"$regex": r"^\s*$"}}]
+                flt.setdefault("$and", []).append({"$or": blank + ([{field: {"$in": values}}] if values else [])})
     date_range = {op: f[key] for key, op in (("date_from", "$gte"), ("date_to", "$lte")) if f.get(key)}
     if date_range:
         flt["call_date"] = date_range
