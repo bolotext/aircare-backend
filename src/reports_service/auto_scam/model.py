@@ -5,7 +5,7 @@ Collections
                        `project_id` holds the uploaded FILE NAME; `aircare_project_id` ties it to the
                        Aircare project for access control. Accessed through the raw collection (no Beanie
                        model) because the conversation shape is free-form.
-- `auto_scam_results`  one row per conversation, keyed by customerCRTId: previous vs updated value of every analytics output field.
+- `auto_scam_results`  one row per conversation, keyed by customerCRTId: the analytics JSON the model produced (after rules).
                        A run skips conversations that already have a successful row here.
 - `auto_scam_datasets` one per uploaded file: its analytics settings and last run.
 - `auto_scam_runs`     run status, progress and the log tail.
@@ -15,7 +15,7 @@ Collections
 from datetime import datetime, timezone
 
 from beanie import Document, PydanticObjectId
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 from pymongo import IndexModel
 
 from reports_service.auto_scam.rules import MAX_RULES, Rule, default_rules
@@ -27,13 +27,13 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class UpdatedColumn(BaseModel):
-    """A field whose value after the rules ran is shown as its own column, under a name the user chooses."""
+class FieldMapping(BaseModel):
+    """One row of the field mapper (see mapper.py): analytics JSON key  ->  conversation field."""
 
-    field: str = Field(min_length=1, max_length=100, description="e.g. STAGE_CODE, DISPOSITION, INTEREST_CLASSIFICATION")
-    name: str = Field(min_length=1, max_length=60, description="Column title shown to users, e.g. 'New disposition'.")
+    source: str = Field(min_length=1, max_length=200, description="Key or dotted path in the analytics JSON, e.g. 'INTEREST_CLASSIFICATION' or 'result.disposition'.")
+    field: str = Field(min_length=1, max_length=100, description="The conversation field it updates, e.g. STAGE_CODE, DISPOSITION, INTEREST_CLASSIFICATION.")
 
-    @field_validator("field", "name")
+    @field_validator("source", "field")
     @classmethod
     def _strip(cls, v: str) -> str:
         v = v.strip()
@@ -41,9 +41,15 @@ class UpdatedColumn(BaseModel):
             raise ValueError("must not be blank")
         return v
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def name(self) -> str:
+        """Title of the 'updated' column: derived, so the user only maps key -> field."""
+        return f"New {self.field}"
 
-def default_updated_columns() -> list[UpdatedColumn]:
-    return [UpdatedColumn(field="INTEREST_CLASSIFICATION", name="Updated class")]
+
+def default_field_mapper() -> list[FieldMapping]:
+    return [FieldMapping(source="INTEREST_CLASSIFICATION", field="INTEREST_CLASSIFICATION")]
 
 
 class AutoScamConfig(BaseModel):
@@ -52,18 +58,26 @@ class AutoScamConfig(BaseModel):
         default_factory=default_rules, max_length=MAX_RULES,
         description="Post-processing rules applied to the model's output (conditions on STAGE_CODE, setupTime, ...).",
     )
-    updated_columns: list[UpdatedColumn] = Field(
-        default_factory=default_updated_columns, max_length=10,
-        description="Which updated fields to show in the Conversations/Results tables, and what to call them.",
+    field_mapper: list[FieldMapping] = Field(
+        default_factory=default_field_mapper, max_length=20,
+        description="Maps keys of the analytics JSON to conversation fields; each becomes an 'updated' column.",
     )
     workers: int = Field(5, ge=1, le=50)
     max_retries: int = Field(3, ge=0, le=10)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_updated_columns(cls, data):
+        """Datasets saved before the field mapper stored `updated_columns` [{field, name}] (analytics key == field)."""
+        if isinstance(data, dict) and "field_mapper" not in data and data.get("updated_columns"):
+            data = {**data, "field_mapper": [{"source": c["field"], "field": c["field"]} for c in data["updated_columns"]]}
+        return data
+
     @model_validator(mode="after")
-    def _unique_columns(self):
-        fields = [c.field for c in self.updated_columns]
+    def _unique_fields(self):
+        fields = [m.field for m in self.field_mapper]
         if len(fields) != len(set(fields)):
-            raise ValueError("each updated column must use a different field")
+            raise ValueError("each conversation field can be mapped only once")
         return self
 
 
@@ -116,13 +130,9 @@ class AutoScamResult(Document):
     aircare_project_id: PydanticObjectId
     file_name: str
     record_id: str
-    disposition: str | None = None
-    previous_stage_code: str | None = None
-    updated_stage_code: str | None = None  # scam.py never rewrites STAGE_CODE, so this equals the previous one
-    # One entry per analytics output field, under its original name: {field, previous, updated, changed}.
-    # `previous` is the value the uploaded conversation already had for that field. Empty = analysis failed.
+    # Every top-level key of the analytics JSON the run produced: {field, updated}. The mapper turns these into
+    # previous/updated columns at read time (see mapper.py). Empty = the analysis failed.
     fields: list[dict] = Field(default_factory=list)
-    changed: bool = False  # any field changed
     error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
 

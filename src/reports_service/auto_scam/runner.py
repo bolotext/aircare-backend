@@ -95,18 +95,11 @@ async def _analysed_keys(run: AutoScamRun) -> set[str]:
 async def _store_result(run: AutoScamRun, key: str, doc: dict, analytics: dict) -> bool:
     """Upsert the one result row for this customerCRTId. Returns True on success, False on a failed analysis."""
     error = analytics.get("error")
-    # every output field the prompt returned, under its original name, next to what the conversation had before
-    fields = [] if error else [
-        {"field": k, "previous": doc.get(k), "updated": v, "changed": doc.get(k) != v}
-        for k, v in analytics.items()
-    ]
+    # the analytics JSON as returned (after the rules): every top-level key with its value
+    fields = [] if error else [{"field": k, "updated": v} for k, v in analytics.items()]
     ok = bool(fields)
     row = {
-        "run_id": str(run.id), "record_id": str(doc["_id"]), "disposition": doc.get("DISPOSITION"),
-        "previous_stage_code": doc.get("STAGE_CODE"),
-        # a rule can change the stage code (action: set STAGE_CODE); otherwise it stays as it was
-        "updated_stage_code": analytics["STAGE_CODE"] if analytics.get("STAGE_CODE") not in (None, "") else doc.get("STAGE_CODE"),
-        "fields": fields, "changed": any(f["changed"] for f in fields),
+        "run_id": str(run.id), "record_id": str(doc["_id"]), "fields": fields,
         "error": None if ok else (error or "no analytics returned"), "created_at": utcnow(),
     }
     flt = {"aircare_project_id": run.aircare_project_id, "file_name": run.file_name, "customer_crt_id": key}

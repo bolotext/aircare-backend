@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from reports_service.auto_scam import runner
 from reports_service.auto_scam.model import AutoScamConfig, AutoScamDataset, AutoScamResult, AutoScamRun, utcnow
 from reports_service.auto_scam.rules import Rule, apply_rules, default_rules
+from reports_service.auto_scam.mapper import analytics_paths, apply_mapper, stage_codes
 from reports_service.auto_scam.records import KEY_PROJECTION, derive_call_date, record_filter, record_key, records_collection
 from reports_service.core.deps import ensure_project_access, require_permission
 from reports_service.core.users_client import IdentityContext
@@ -403,21 +404,22 @@ async def list_records(
             "customer_crt_id": {"$in": [record_key(d) for d in page]},
         })
     }
-    names = [c.field for c in ds.config.updated_columns]  # the updated fields the user chose in Settings
+    mapper = ds.config.field_mapper
     items = []
     for d in page:
         r = results.get(record_key(d))
+        mapped = apply_mapper(mapper, {f["field"]: f["updated"] for f in r.fields}, d) if r else []
         items.append({
             "id": str(d["_id"]), "customerCRTId": d.get("customerCRTId"), "STAGE_CODE": d.get("STAGE_CODE"),
             "DISPOSITION": d.get("DISPOSITION"), "call_date": d.get("call_date"), "messages": len(d.get("conversation_log") or []),
-            "values": {n: d.get(n) for n in names},  # what the conversation had before analytics
+            "values": {m.field: d.get(m.field) for m in mapper},  # what the conversation had before analytics
             "result": {
-                "updated": {f["field"]: f["updated"] for f in r.fields if f["field"] in names},
-                "changed": {f["field"]: f["changed"] for f in r.fields if f["field"] in names},
+                "updated": {m["name"]: m["updated"] for m in mapped if m["found"]},
+                "changed": {m["name"]: m["changed"] for m in mapped if m["found"]},
                 "error": r.error,
             } if r else None,
         })
-    return success_response(data={"total": total, "skip": skip, "limit": limit, "columns": [c.model_dump() for c in ds.config.updated_columns], "items": items})
+    return success_response(data={"total": total, "skip": skip, "limit": limit, "columns": [m.model_dump() for m in mapper], "items": items})
 
 
 @router.get("/records/{record_id}", summary="Get one conversation (full document)")
@@ -547,23 +549,53 @@ async def cancel_run(run_id: str, identity: IdentityContext = Depends(require_pe
     return success_response(message="Cancel requested", data={"id": run_id})
 
 
-@router.get("/datasets/{file_name}/results", summary="Per-conversation analytics: previous vs updated stage code and lead score")
+@router.get("/datasets/{file_name}/analytics-keys", summary="Keys found in this file's analytics JSON (for the field mapper)")
+async def analytics_keys(
+    file_name: str,
+    project_id: str = Query(...),
+    identity: IdentityContext = Depends(require_permission("auto_scam.view")),
+) -> dict:
+    ensure_project_access(identity, project_id)
+    ds = await _dataset(project_id, file_name)
+    rows = await AutoScamResult.find({"aircare_project_id": ds.aircare_project_id, "file_name": file_name, "fields": {"$ne": []}}) \
+        .sort("-_id").limit(FIELD_VALUE_SAMPLE).to_list()
+    return success_response(data=analytics_paths([{f["field"]: f["updated"] for f in r.fields} for r in rows]))
+
+
+@router.get("/datasets/{file_name}/results", summary="Per-conversation analytics, mapped through the field mapper")
 async def dataset_results(
     file_name: str,
     project_id: str = Query(...),
     changed_only: bool = Query(False),
     identity: IdentityContext = Depends(require_permission("auto_scam.view")),
 ) -> dict:
+    """`fields` is the analytics JSON as stored; `mapped` is that JSON seen through the field mapper (previous = what
+    the conversation had, updated = the mapped analytics value). Computed on read, so a changed mapper applies at once."""
     ensure_project_access(identity, project_id)
     ds = await _dataset(project_id, file_name)
-    flt: dict[str, Any] = {"aircare_project_id": ds.aircare_project_id, "file_name": file_name}
-    if changed_only:
-        flt["changed"] = True
-    rows = await AutoScamResult.find(flt).sort("+_id").to_list()
-    items = [
-        {"id": str(r.id), "run_id": r.run_id, "record_id": r.record_id, "customerCRTId": r.customer_crt_id,
-         "disposition": r.disposition, "previous_stage_code": r.previous_stage_code,
-         "updated_stage_code": r.updated_stage_code, "fields": r.fields, "changed": r.changed, "error": r.error}
-        for r in rows
-    ]
-    return success_response(data={"columns": [c.model_dump() for c in ds.config.updated_columns], "items": items})
+    mapper = ds.config.field_mapper
+    rows = await AutoScamResult.find({"aircare_project_id": ds.aircare_project_id, "file_name": file_name}).sort("+_id").to_list()
+
+    wanted = {"STAGE_CODE", "DISPOSITION", *(m.field for m in mapper)}
+    projection = {f: 1 for f in wanted}
+    records: dict[str, dict] = {}
+    for i in range(0, len(rows), 5000):
+        oids = [ObjectId(r.record_id) for r in rows[i : i + 5000]]
+        async for d in records_collection().find({"_id": {"$in": oids}}, projection):
+            records[str(d["_id"])] = d
+
+    items = []
+    for r in rows:
+        rec = records.get(r.record_id, {})
+        analytics = {f["field"]: f["updated"] for f in r.fields}
+        mapped = apply_mapper(mapper, analytics, rec)
+        prev_stage, new_stage = stage_codes(mapper, analytics, rec)
+        changed = any(m["changed"] for m in mapped) or (new_stage != prev_stage)
+        if changed_only and not changed:
+            continue
+        items.append({
+            "id": str(r.id), "run_id": r.run_id, "record_id": r.record_id, "customerCRTId": r.customer_crt_id,
+            "disposition": rec.get("DISPOSITION"), "previous_stage_code": prev_stage, "updated_stage_code": new_stage,
+            "fields": r.fields, "mapped": mapped, "changed": changed, "error": r.error,
+        })
+    return success_response(data={"columns": [m.model_dump() for m in mapper], "items": items})
