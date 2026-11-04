@@ -29,7 +29,7 @@ RESERVED_DB_NAMES = {"admin", "local", "config"}
 DB_NAME_PATTERN = r"^[A-Za-z0-9_-]{1,38}$"
 REPORT_PATH = "/mongo_test_report"
 CUSTOMER_PATH = "/mongo_test_customer"
-PHONE_NUMBER_PATTERN = r"^[0-9]{6,15}$"
+PHONE_NUMBER_PATTERN = r"^[0-9]{6,32}$"
 
 
 def validate_db_name(db_name: str) -> None:
