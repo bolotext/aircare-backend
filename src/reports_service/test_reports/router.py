@@ -251,6 +251,12 @@ async def _row(identity: IdentityContext, row_id: str) -> tuple[dict, TestReport
     return doc, r
 
 
+@router.get("/rows/{row_id}", summary="One row with its report's columns (for the conversation page)")
+async def get_row(row_id: str, identity: IdentityContext = Depends(require_permission("test_report.view"))) -> dict:
+    doc, r = await _row(identity, row_id)
+    return success_response(data={**_row_out(doc), "report": _report_out(r)})
+
+
 @router.patch("/rows/{row_id}", summary="Edit cells of a row (only the given columns change)")
 async def update_row(row_id: str, body: RowBody, identity: IdentityContext = Depends(require_permission("test_report.manage"))) -> dict:
     doc, r = await _row(identity, row_id)

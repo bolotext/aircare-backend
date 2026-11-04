@@ -50,6 +50,8 @@ async def test_import_edit_columns(app, client):
     upd = (await client.patch(f"{BASE}/rows/{row_id}", json={"data": {"c3": "Changed"}})).json()["data"]
     assert upd["data"]["c3"] == "Changed" and upd["data"]["c2"] == "AGENT: hi"
     assert (await client.patch(f"{BASE}/rows/{row_id}", json={"data": {"zz": "x"}})).json()["code"] == 400
+    one = (await client.get(f"{BASE}/rows/{row_id}")).json()["data"]
+    assert one["data"]["c3"] == "Changed" and one["report"]["id"] == rid
 
     cols = (await client.post(f"{BASE}/{rid}/columns", json={"label": "Dev comments", "default": "-"})).json()["data"]["columns"]
     assert (cols[-1]["key"], cols[-1]["label"], cols[-1]["source_col"]) == ("c4", "Dev comments", None)
