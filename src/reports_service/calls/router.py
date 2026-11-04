@@ -1,4 +1,6 @@
+import logging
 from datetime import date, datetime, timezone
+from typing import Any
 
 from common.errors import BadGatewayError, NotFoundError, UnprocessableEntityError
 from common.openapi import FORBIDDEN_EXAMPLE, UNAUTHORIZED_EXAMPLE, not_found_example, success_and_error_responses
@@ -13,12 +15,14 @@ from reports_service.calls.recording import fetch_recording_audio, resolve_recor
 from reports_service.calls.repository import CallFilter, day_range_bounds
 from reports_service.calls.mapped_fields import diff_source_document, extract_fields, mapped_columns, source_document
 from reports_service.calls.journey import load_journey
-from reports_service.calls.prod_import import PHONE_NUMBER_PATTERN, import_from_prod
+from reports_service.calls.prod_import import PHONE_NUMBER_PATTERN, import_from_prod, preview_from_prod
 from reports_service.calls.schema import CallDetail, CallJourney, CallListItem, PaginatedCalls, ProdImportResult
 from reports_service.core.config import get_settings
 from reports_service.core.deps import ProjectCallSource, ensure_project_access, require_permission, resolve_project_source
 from reports_service.core.users_client import IdentityContext, get_project_config
 from reports_service.db.mongodb import get_client
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/calls", tags=["calls"])
 
@@ -165,6 +169,45 @@ class ProdImportBody(BaseModel):
     project_id: str = Field(description="The project whose report collection the record is saved into and whose Flow ID is used.")
     phone_number: str = Field(pattern=PHONE_NUMBER_PATTERN, description="Customer phone number (digits only) to fetch prod calls and customer details for.")
     confirm_pii: bool = Field(description="Must be true: the caller confirms this personal data may be copied to the stage database.")
+    calls_payload: Any = Field(default=None, description="The calls API response to save (as shown, and possibly edited, in the preview). Omit to fetch it fresh.")
+    customer_payload: Any = Field(default=None, description="The customer API response to save (as reviewed in the preview). Omit to fetch it fresh.")
+
+
+@router.post(
+    "/import-from-prod/preview",
+    summary="Preview what an import from prod would save (full API responses, nothing written)",
+    description="""Same lookup as `POST /calls/import-from-prod` (phone number + the project's Flow ID) but **saves nothing**:
+returns the prod report API's full JSON response and, if the project has a customer-details collection, the customer
+API's full response, so an admin can review/edit them and then import via `calls_payload` / `customer_payload`.
+
+**Privacy:** the response is personal data. Admin only (`report.import`), requires `confirm_pii: true`, audit-logged
+(without the phone number). **Errors:** as for the import (403/404/422/502).""",
+)
+async def preview_prod_import(
+    request: Request,
+    body: ProdImportBody = Body(...),
+    identity: IdentityContext = Depends(require_permission("report.import")),
+) -> dict:
+    if not body.confirm_pii:
+        raise UnprocessableEntityError("confirm_pii must be true to fetch personal data from prod")
+    ensure_project_access(identity, body.project_id)
+    config = await get_project_config(request.app.state.users_http_client, body.project_id)
+    if not config.flow_id:
+        raise UnprocessableEntityError("This project has no Flow ID — set it in Settings → Data Source first")
+    result = await preview_from_prod(
+        phone_number=body.phone_number, flow_id=config.flow_id, with_customer=bool(config.customer_details_collection_name)
+    )
+    logger.info("prod import preview: user=%s project=%s", identity.user_id, body.project_id)
+    return success_response(
+        message="Preview",
+        data={
+            **result,
+            "flow_id": config.flow_id,
+            "db_name": config.report_db_name,
+            "collection_name": config.report_collection_name,
+            "customer_collection_name": config.customer_details_collection_name,
+        },
+    )
 
 
 @router.post(
@@ -204,6 +247,8 @@ async def import_call_from_prod(
         collection_name=config.report_collection_name,
         customer_collection_name=config.customer_details_collection_name,
         user_id=identity.user_id,
+        calls_payload=body.calls_payload,
+        customer_payload=body.customer_payload,
     )
     return success_response(message="Imported from prod", data=ProdImportResult(**result))
 

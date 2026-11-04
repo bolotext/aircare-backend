@@ -168,3 +168,24 @@ async def test_supervisor_cannot_import(app, client, mongo, monkeypatch):
     body = (await client.post("/api/v1/calls/import-from-prod", json=BODY)).json()
 
     assert body["code"] == 403
+
+
+async def test_preview_returns_full_responses_without_saving_then_import_uses_edited_payload(app, client, mongo, monkeypatch):
+    app.dependency_overrides[get_current_identity] = lambda: make_identity("ADMIN")
+    _project(monkeypatch, app)
+    _prod_api(monkeypatch)
+
+    prev = (await client.post("/api/v1/calls/import-from-prod/preview", json=BODY)).json()
+    assert prev["code"] == 200
+    assert prev["data"]["calls_response"] == CALLS and prev["data"]["customer_response"] == CUSTOMER
+    assert prev["data"]["db_name"] == "stage_db" and prev["data"]["customer_collection_name"] == "customers"
+    assert await mongo["stage_db"]["call_logs"].count_documents({}) == 0  # nothing saved by a preview
+
+    edited = {**CALLS, "records": [{**CALLS["records"][0], "full_name": "Edited Name"}]}
+    saved = (await client.post("/api/v1/calls/import-from-prod", json={**BODY, "calls_payload": edited, "customer_payload": CUSTOMER})).json()
+    assert saved["data"]["calls_created"] == 1
+    doc = await mongo["stage_db"]["call_logs"].find_one({})
+    assert doc["full_name"] == "Edited Name"
+
+    unconfirmed = (await client.post("/api/v1/calls/import-from-prod/preview", json={**BODY, "confirm_pii": False})).json()
+    assert unconfirmed["code"] == 422

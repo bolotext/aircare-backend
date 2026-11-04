@@ -62,20 +62,50 @@ async def _fetch(path: str, phone_number: str, flow_id: str, what: str) -> Any:
         raise BadGatewayError(f"Prod {what} API returned a non-JSON response; nothing was saved") from exc
 
 
-async def fetch_prod_calls(phone_number: str, flow_id: str) -> list[dict[str, Any]]:
-    payload = await _fetch(REPORT_PATH, phone_number, flow_id, "report")
+def calls_from_payload(payload: Any) -> list[dict[str, Any]]:
+    """The call records inside a prod report-API response (`{"records": [...]}` or a bare list)."""
     records = payload.get("records") if isinstance(payload, dict) else payload
-    records = [r for r in (records or []) if isinstance(r, dict)]
+    records = [r for r in (records or []) if isinstance(r, dict)] if isinstance(records, list) else []
     if not records:
         raise UnprocessableEntityError("Prod report API returned no calls for this phone number")
     return records
 
 
-async def fetch_prod_customer(phone_number: str, flow_id: str) -> dict[str, Any]:
-    payload = await _fetch(CUSTOMER_PATH, phone_number, flow_id, "customer")
+def customer_from_payload(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict) or not payload:
         raise UnprocessableEntityError("Prod customer API returned no data for this phone number")
     return payload
+
+
+async def fetch_prod_calls_payload(phone_number: str, flow_id: str) -> Any:
+    """The report API's full JSON response, untouched."""
+    return await _fetch(REPORT_PATH, phone_number, flow_id, "report")
+
+
+async def fetch_prod_customer_payload(phone_number: str, flow_id: str) -> Any:
+    return await _fetch(CUSTOMER_PATH, phone_number, flow_id, "customer")
+
+
+async def fetch_prod_calls(phone_number: str, flow_id: str) -> list[dict[str, Any]]:
+    return calls_from_payload(await fetch_prod_calls_payload(phone_number, flow_id))
+
+
+async def fetch_prod_customer(phone_number: str, flow_id: str) -> dict[str, Any]:
+    return customer_from_payload(await fetch_prod_customer_payload(phone_number, flow_id))
+
+
+async def preview_from_prod(*, phone_number: str, flow_id: str, with_customer: bool) -> dict:
+    """Fetches (without saving anything) what an import would store: the calls API's full response and,
+    if the project has a customer-details collection, the customer API's full response."""
+    calls_response = await fetch_prod_calls_payload(phone_number, flow_id)
+    customer_response: Any = None
+    customer_error: str | None = None
+    if with_customer:
+        try:
+            customer_response = await fetch_prod_customer_payload(phone_number, flow_id)
+        except BadGatewayError as exc:
+            customer_error = str(exc)
+    return {"calls_response": calls_response, "customer_response": customer_response, "customer_error": customer_error}
 
 
 def _meta(flow_id: str, user_id: str, **extra: Any) -> dict[str, Any]:
@@ -97,6 +127,8 @@ async def import_from_prod(
     collection_name: str,
     customer_collection_name: str | None,
     user_id: str,
+    calls_payload: Any = None,
+    customer_payload: Any = None,
 ) -> dict:
     """Fetches the customer's calls and customer record, then upserts them.
     Calls are keyed on `_import_meta.conversation_id`, the customer record on
@@ -106,13 +138,18 @@ async def import_from_prod(
     a customer-details collection and its API answered 200."""
 
     validate_db_name(db_name)
-    calls = await fetch_prod_calls(phone_number, flow_id)
+    # `calls_payload` / `customer_payload` = the (possibly edited) responses the admin reviewed in the preview.
+    calls = calls_from_payload(calls_payload) if calls_payload is not None else await fetch_prod_calls(phone_number, flow_id)
 
     customer: dict[str, Any] | None = None
     customer_error: str | None = None
     if customer_collection_name:
         try:
-            customer = await fetch_prod_customer(phone_number, flow_id)
+            customer = (
+                customer_from_payload(customer_payload)
+                if customer_payload is not None
+                else await fetch_prod_customer(phone_number, flow_id)
+            )
         except (BadGatewayError, UnprocessableEntityError) as exc:
             customer_error = str(exc)
 
