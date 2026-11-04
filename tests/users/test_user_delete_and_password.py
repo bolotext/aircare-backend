@@ -46,3 +46,13 @@ async def test_password_reset_is_super_admin_only(client, monkeypatch):
 
     with pytest.raises(ForbiddenError):
         await service.update_user(AuthContext(user=sup), victim.id, None, None, None, "another-pass1")
+
+
+async def test_admin_can_change_own_password_resending_admin_role(client):
+    admin = await make_user(None, Role.ADMIN, "root5@example.com")
+    resp = await client.patch(f"/api/v1/users/{admin.id}", headers=auth_header(admin), json={"role": "ADMIN", "password": "my-new-password"})
+    assert code(resp) == 200
+    # but changing someone to ADMIN is still refused
+    org = await make_org("Org W", "org-w")
+    v = await make_user(org.id, Role.VIEWER, "v5@example.com")
+    assert code(await client.patch(f"/api/v1/users/{v.id}", headers=auth_header(admin), json={"role": "ADMIN"})) == 400

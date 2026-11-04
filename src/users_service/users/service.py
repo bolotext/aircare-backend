@@ -76,15 +76,16 @@ async def update_user(
     status: UserStatus | None,
     password: str | None,
 ) -> User:
-    if role is not None and role not in ORG_ASSIGNABLE_ROLES:
-        raise BadRequestError("role must be one of SUPERVISOR, VIEWER", {"field": "role"})
-
     if password and auth.user.role != Role.ADMIN:
         raise ForbiddenError("Only a super admin can reset another user's password")
 
     target = await user_repo.get_by_id_global(user_id)
     if target is None:
         raise NotFoundError("User not found")
+
+    # Re-sending the current role (e.g. an ADMIN editing a profile) is a no-op; only *changing* it is restricted.
+    if role is not None and role != target.role and role not in ORG_ASSIGNABLE_ROLES:
+        raise BadRequestError("role must be one of SUPERVISOR, VIEWER", {"field": "role"})
 
     hashed_password = hash_password(password) if password else None
     updated = await user_repo.update_user(
