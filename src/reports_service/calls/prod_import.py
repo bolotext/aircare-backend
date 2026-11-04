@@ -94,6 +94,14 @@ async def fetch_prod_customer(phone_number: str, flow_id: str) -> dict[str, Any]
     return customer_from_payload(await fetch_prod_customer_payload(phone_number, flow_id))
 
 
+async def fetch_full_data(*, phone_number: str, flow_id: str) -> dict:
+    """Both prod APIs' full responses for one number, nothing saved. Each must answer HTTP 200 (else BadGatewayError)."""
+    return {
+        "calls_response": await fetch_prod_calls_payload(phone_number, flow_id),
+        "customer_response": await fetch_prod_customer_payload(phone_number, flow_id),
+    }
+
+
 async def preview_from_prod(*, phone_number: str, flow_id: str, with_customer: bool) -> dict:
     """Fetches (without saving anything) what an import would store: the calls API's full response and,
     if the project has a customer-details collection, the customer API's full response."""

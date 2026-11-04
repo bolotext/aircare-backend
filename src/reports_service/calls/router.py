@@ -15,7 +15,7 @@ from reports_service.calls.recording import fetch_recording_audio, resolve_recor
 from reports_service.calls.repository import CallFilter, day_range_bounds
 from reports_service.calls.mapped_fields import diff_source_document, extract_fields, mapped_columns, source_document
 from reports_service.calls.journey import load_journey
-from reports_service.calls.prod_import import PHONE_NUMBER_PATTERN, import_from_prod, preview_from_prod
+from reports_service.calls.prod_import import PHONE_NUMBER_PATTERN, fetch_full_data, import_from_prod, preview_from_prod
 from reports_service.calls.schema import CallDetail, CallJourney, CallListItem, PaginatedCalls, ProdImportResult
 from reports_service.core.config import get_settings
 from reports_service.core.deps import ProjectCallSource, ensure_project_access, require_permission, resolve_project_source
@@ -171,6 +171,39 @@ class ProdImportBody(BaseModel):
     confirm_pii: bool = Field(description="Must be true: the caller confirms this personal data may be copied to the stage database.")
     calls_payload: Any = Field(default=None, description="The calls API response to save (as shown, and possibly edited, in the preview). Omit to fetch it fresh.")
     customer_payload: Any = Field(default=None, description="The customer API response to save (as reviewed in the preview). Omit to fetch it fresh.")
+
+
+class ProdFullDataBody(BaseModel):
+    project_id: str = Field(description="The project whose Flow ID is used for the lookup.")
+    phone_number: str = Field(pattern=PHONE_NUMBER_PATTERN, description="Mobile number (digits only).")
+    confirm_pii: bool = Field(description="Must be true: the caller confirms they may view this customer's personal data.")
+
+
+@router.post(
+    "/prod-full-data",
+    summary="Show a customer's full prod data: report API + customer-details API (nothing saved)",
+    description="""Calls both prod APIs for one mobile number — the report API (`/mongo_test_report`) and the customer
+API (`/mongo_test_customer`), each with the project's **Flow ID** as the `flow_id` header — and returns their full
+JSON responses side by side. **Only succeeds if both answer HTTP 200** (otherwise 502 and nothing is returned).
+Nothing is written anywhere.
+
+**Privacy:** personal data. Admin only (`report.import`), requires `confirm_pii: true`, audit-logged without the number.
+**Errors:** 403/404/422 as for the import; 502 if either prod API is unreachable or not 200.""",
+)
+async def prod_full_data(
+    request: Request,
+    body: ProdFullDataBody = Body(...),
+    identity: IdentityContext = Depends(require_permission("report.import")),
+) -> dict:
+    if not body.confirm_pii:
+        raise UnprocessableEntityError("confirm_pii must be true to view personal data from prod")
+    ensure_project_access(identity, body.project_id)
+    config = await get_project_config(request.app.state.users_http_client, body.project_id)
+    if not config.flow_id:
+        raise UnprocessableEntityError("This project has no Flow ID — set it in Settings → Data Source first")
+    result = await fetch_full_data(phone_number=body.phone_number, flow_id=config.flow_id)
+    logger.info("prod full data: user=%s project=%s", identity.user_id, body.project_id)
+    return success_response(message="Full data", data={**result, "flow_id": config.flow_id})
 
 
 @router.post(
