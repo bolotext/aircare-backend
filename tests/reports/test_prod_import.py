@@ -195,15 +195,16 @@ async def test_full_data_returns_both_responses_only_when_both_are_200(app, clie
     app.dependency_overrides[get_current_identity] = lambda: make_identity("ADMIN")
     _project(monkeypatch, app)
     seen = _prod_api(monkeypatch)
-    ok = (await client.post("/api/v1/calls/prod-full-data", json=BODY)).json()
+    full_body = {"project_id": PROJECT_ID, "phone_number": PHONE}
+    ok = (await client.post("/api/v1/calls/prod-full-data", json=full_body)).json()
     assert ok["code"] == 200 and ok["data"]["calls_response"] == CALLS and ok["data"]["customer_response"] == CUSTOMER
     assert any("mongo_test_customer" in u for u in seen["urls"]) and any("mongo_test_report" in u for u in seen["urls"])
     assert await mongo["stage_db"]["call_logs"].count_documents({}) == 0
-    assert (await client.post("/api/v1/calls/prod-full-data", json={**BODY, "confirm_pii": False})).json()["code"] == 422
+    assert (await client.post("/api/v1/calls/prod-full-data", json={**full_body, "phone_number": "12ab"})).json()["code"] == 422
 
 
 async def test_full_data_fails_when_customer_api_is_not_200(app, client, monkeypatch):
     app.dependency_overrides[get_current_identity] = lambda: make_identity("ADMIN")
     _project(monkeypatch, app)
     _prod_api(monkeypatch, customer=(404, {"error": "none"}))
-    assert (await client.post("/api/v1/calls/prod-full-data", json=BODY)).json()["code"] == 502
+    assert (await client.post("/api/v1/calls/prod-full-data", json={"project_id": PROJECT_ID, "phone_number": PHONE})).json()["code"] == 502

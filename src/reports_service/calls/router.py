@@ -176,7 +176,6 @@ class ProdImportBody(BaseModel):
 class ProdFullDataBody(BaseModel):
     project_id: str = Field(description="The project whose Flow ID is used for the lookup.")
     phone_number: str = Field(pattern=PHONE_NUMBER_PATTERN, description="Mobile number (digits only).")
-    confirm_pii: bool = Field(description="Must be true: the caller confirms they may view this customer's personal data.")
 
 
 @router.post(
@@ -187,7 +186,7 @@ API (`/mongo_test_customer`), each with the project's **Flow ID** as the `flow_i
 JSON responses side by side. **Only succeeds if both answer HTTP 200** (otherwise 502 and nothing is returned).
 Nothing is written anywhere.
 
-**Privacy:** personal data. Admin only (`report.import`), requires `confirm_pii: true`, audit-logged without the number.
+**Privacy:** personal data. Admin only (`report.import`) and audit-logged without the number.
 **Errors:** 403/404/422 as for the import; 502 if either prod API is unreachable or not 200.""",
 )
 async def prod_full_data(
@@ -195,8 +194,6 @@ async def prod_full_data(
     body: ProdFullDataBody = Body(...),
     identity: IdentityContext = Depends(require_permission("report.import")),
 ) -> dict:
-    if not body.confirm_pii:
-        raise UnprocessableEntityError("confirm_pii must be true to view personal data from prod")
     ensure_project_access(identity, body.project_id)
     config = await get_project_config(request.app.state.users_http_client, body.project_id)
     if not config.flow_id:
