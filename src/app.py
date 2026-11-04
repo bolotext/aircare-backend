@@ -27,6 +27,7 @@ from reports_service.auto_scam import runner as auto_scam_runner
 from reports_service.auto_scam.router import router as auto_scam_router
 from reports_service.auto_scam.uploads import router as auto_scam_uploads_router
 from reports_service.auto_scam.uploads import sweep_uploads as auto_scam_sweep_uploads
+from reports_service.test_reports.router import router as test_reports_router
 from reports_service.calls.router import router as calls_router
 from reports_service.customer_details.router import router as customer_details_router
 from reports_service.dashboard.router import router as dashboard_router
@@ -174,6 +175,7 @@ def create_app() -> FastAPI:
         s3_router,
         auto_scam_router,
         auto_scam_uploads_router,
+        test_reports_router,
     ):
         app.include_router(router, prefix=api_v1)
 

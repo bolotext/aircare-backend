@@ -63,6 +63,8 @@ ROLE_PERMISSIONS: dict[Role, list[str]] = {
         "customer_detail.create",
         "customer_detail.update",
         "customer_detail.delete",
+        "test_report.view",
+        "test_report.manage",
     ],
     Role.VIEWER: ["project.view", "report.view", "patient.view", "patient_call.view"],
 }
@@ -106,6 +108,9 @@ PERMISSION_DESCRIPTIONS: dict[str, str] = {
     "auto_scam.manage": "Upload, edit and delete Auto Scam datasets/conversations and change their analytics settings.",
     "auto_scam.run": "Run (or cancel) the lead-score analytics script on a dataset; sends transcripts to Azure OpenAI.",
     "auto_scam.*": "All Auto Scam permissions.",
+    "test_report.view": "View a project's Test Reports (uploaded QA sheets) and their rows.",
+    "test_report.manage": "Create, edit and delete Test Reports, their rows and columns.",
+    "test_report.*": "All Test Report permissions.",
     "s3.view": "Browse and read objects in a project's configured S3 bucket (Admin only).",
     "s3.configure": "Set or remove a project's S3 credentials (access key, secret, region, bucket). Admin only.",
     "s3.*": "All S3 permissions.",

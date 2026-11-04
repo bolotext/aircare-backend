@@ -10,6 +10,7 @@ from reports_service.reports.model import ReportRecipient, ReportRun
 from reports_service.risk_thresholds.model import RiskThreshold
 from reports_service.s3_storage.model import S3Config
 from reports_service.scenarios.model import ScenarioRun
+from reports_service.test_reports.model import TestReport
 
 if not hasattr(AsyncIOMotorClient, "_dummay_append_metadata_patched"):
     # See services/users/src/users_service/db/mongodb.py for the full
@@ -44,7 +45,7 @@ async def init_db(client: AsyncIOMotorClient | None = None) -> None:
     _client = active_client
     await init_beanie(
         database=active_client[settings.mongo_db_name],
-        document_models=[Call, ScenarioRun, ReportRun, ReportRecipient, Patient, RiskThreshold, PatientCall, S3Config, AutoScamDataset, AutoScamRun, AutoScamResult, AutoScamUpload],
+        document_models=[Call, ScenarioRun, ReportRun, ReportRecipient, Patient, RiskThreshold, PatientCall, S3Config, AutoScamDataset, AutoScamRun, AutoScamResult, AutoScamUpload, TestReport],
     )
 
 
