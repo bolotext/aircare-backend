@@ -145,7 +145,7 @@ async def get_user(
 distinct from `PATCH /users/me`, which only ever updates the caller's own account.
 
 **When to use:** changing someone's role, disabling their account via `status`, or resetting their
-password.
+password (password resets are super admin only).
 
 **Processing behavior:** `role` must be `SUPERVISOR` or `VIEWER` (an Admin role change isn't done here);
 setting `password` revokes every existing refresh token for that user, forcing re-login everywhere.
@@ -173,9 +173,12 @@ async def update_user(
 @router.delete(
     "/{user_id}",
     response_model=SuccessResponse[UserOut],
-    summary="Disable a user",
-    description="""Disables a user account (soft-delete — the record is kept, not removed) so it can no
+    summary="Disable a user, or permanently delete with `?permanent=true` (super admin)",
+    description="""By default disables a user account (soft-delete — the record is kept, not removed) so it can no
 longer authenticate. Any of that user's existing access/refresh tokens stop working on their next use.
+
+With `permanent=true` the user, their project assignments and sessions are removed for good. Super admin
+(ADMIN) only; you can't delete yourself or another ADMIN.
 
 **Errors:** 403 if the caller lacks `user.delete` or the target user is outside the caller's scope; 404 if
 `user_id` doesn't exist.""",
@@ -183,7 +186,11 @@ longer authenticate. Any of that user's existing access/refresh tokens stop work
 )
 async def disable_user(
     user_id: PydanticObjectId = Path(..., description="The user to disable.", examples=["6aae5deae9a48c4dc62aa399"]),
+    permanent: bool = Query(default=False, description="Permanently delete instead of disabling (super admin only)."),
     auth: AuthContext = Depends(require_permission("user.delete")),
 ) -> dict:
+    if permanent:
+        user = await user_service.delete_user(auth, user_id)
+        return success_response(message="User deleted", data=_to_out(user))
     user = await user_service.disable_user(auth, user_id)
     return success_response(message="User disabled", data=_to_out(user))

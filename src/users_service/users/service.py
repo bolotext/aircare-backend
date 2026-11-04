@@ -1,12 +1,14 @@
 from beanie import PydanticObjectId
 from common.enums import Role
-from common.errors import BadRequestError, ConflictError, NotFoundError, UnauthorizedError
+from common.errors import BadRequestError, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
 
 from users_service.auth import repository as refresh_token_repo
 from users_service.core.deps import AuthContext
 from users_service.core.security import hash_password, verify_password
 from users_service.enums import UserStatus
 from users_service.organizations import repository as organization_repo
+from users_service.projects.model import UserProjectAssignment
+from users_service.auth.model import RefreshToken
 from users_service.users import repository as user_repo
 from users_service.users.model import User
 
@@ -77,6 +79,9 @@ async def update_user(
     if role is not None and role not in ORG_ASSIGNABLE_ROLES:
         raise BadRequestError("role must be one of SUPERVISOR, VIEWER", {"field": "role"})
 
+    if password and auth.user.role != Role.ADMIN:
+        raise ForbiddenError("Only a super admin can reset another user's password")
+
     target = await user_repo.get_by_id_global(user_id)
     if target is None:
         raise NotFoundError("User not found")
@@ -98,6 +103,23 @@ async def disable_user(auth: AuthContext, user_id: PydanticObjectId) -> User:
     updated = await user_repo.update_user(target, status=UserStatus.DISABLED)
     await refresh_token_repo.revoke_all_for_user(updated.id)
     return updated
+
+
+async def delete_user(auth: AuthContext, user_id: PydanticObjectId) -> User:
+    """Permanently removes a user, their project assignments and sessions. Super admin only."""
+    if auth.user.role != Role.ADMIN:
+        raise ForbiddenError("Only a super admin can permanently delete a user")
+    target = await user_repo.get_by_id_global(user_id)
+    if target is None:
+        raise NotFoundError("User not found")
+    if target.id == auth.user_id:
+        raise BadRequestError("You can't delete your own account")
+    if target.role == Role.ADMIN:
+        raise BadRequestError("A super admin account can't be deleted")
+    await UserProjectAssignment.find(UserProjectAssignment.user_id == target.id).delete()
+    await RefreshToken.find(RefreshToken.user_id == target.id).delete()
+    await target.delete()
+    return target
 
 
 async def update_self(
