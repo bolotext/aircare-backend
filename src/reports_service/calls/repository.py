@@ -108,7 +108,17 @@ def build_mongo_query(call_filter: CallFilter) -> dict:
             *({field: pattern} for field in PHONE_SEARCH_FIELDS),
         ]
     if call_filter.transcript_search:
-        query["raw.conversation_log.content"] = {"$regex": re.escape(call_filter.transcript_search), "$options": "i"}
+        # Transcript text, or the conversation id / phone number itself.
+        pattern = {"$regex": re.escape(call_filter.transcript_search), "$options": "i"}
+        query["$and"] = [
+            {
+                "$or": [
+                    {"raw.conversation_log.content": pattern},
+                    {"conversation_id": pattern},
+                    *({field: pattern} for field in PHONE_SEARCH_FIELDS),
+                ]
+            }
+        ]
     return query
 
 
@@ -174,7 +184,11 @@ def matches_filter(call: Call, call_filter: CallFilter) -> bool:
         if not any(needle in h.lower() for h in haystacks):
             return False
     if call_filter.transcript_search and transcript_snippet(call.raw, call_filter.transcript_search) is None:
-        return False
+        needle = call_filter.transcript_search.lower()
+        source = call._source_doc or {}
+        phones = tuple(str(source[f]) for f in PHONE_SEARCH_FIELDS if source.get(f) is not None)
+        if not any(needle in h.lower() for h in (call.conversation_id, *phones)):
+            return False
     return True
 
 
