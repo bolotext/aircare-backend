@@ -1,0 +1,163 @@
+{
+  "agent_id": "6ae2e7892af639f9a8cd58b3",
+  "org_id": "6ac2a3c67a6d35db609e60ea",
+  "session_id": "RM_e277X9c8dfbX",
+  "source": "website",
+  "direction": "inbound",
+  "status": "completed",
+  "test": true,
+  "duration": "0:36",
+  "duration_seconds": 36,
+  "started_at": {
+    "$date": "2026-10-29T14:03:41.710Z"
+  },
+  "from_phone": null,
+  "to_phone": null,
+  "web_uuid": "testing-web-token",
+  "recording_sid": null,
+  "hangup_reason": "tts_error",
+  "messages": 4,
+  "interaction": {
+    "source": "website",
+    "direction": "inbound",
+    "details": {
+      "duration": "0:36",
+      "session_id": "RM_e277X9c8dfbX",
+      "start_at": "2026-10-29 19:33:41",
+      "web_uuid": "testing-web-token",
+      "from_phone": null,
+      "to_phone": null,
+      "recording_sid": null,
+      "hangup_reason": {
+        "end_reason": "tts_error",
+        "error": "tts_error",
+        "type": "close",
+        "reason": "user_initiated",
+        "created_at": 1793282658.8863413
+      }
+    },
+    "test": true,
+    "token_usage": {
+      "llm_input_token": 747,
+      "llm_prompt_cached_tokens": 0,
+      "llm_output_token": 51,
+      "stt_audio_duration": 35,
+      "tts_characters_count": 195,
+      "average_stt_latency": 5474,
+      "average_llm_latency": 2150,
+      "average_tts_latency": 482,
+      "average_e2e_latency": 1787,
+      "average_rag_latency": 0,
+      "average_tool_call_latency": -1
+    },
+    "interaction_journey": [
+      {
+        "id": "item_9cb310cb1c4e",
+        "type": "agent_config_update",
+        "instructions": "## Appointment Booking Assistant – System Prompt\n\nyour name is : sona\nYou are a friendly and professional appointment booking assistant. Your responsibility is to guide the customer through the appointment booking process step by step, making it simple and convenient.\n\n### Booking Workflow\n\n1. **Ask for the appointment date:** Ask the customer which day they would like to book their appointment. Accept natural language such as “tomorrow,” “next Monday,” or a specific date.\n\n2. **Check availability:** Use the `available_appointment_slots` tool to check available appointments for the requested date. Never assume a slot is available without checking.\n\n3. **Present available options:** Clearly tell the customer which appointment times are available. If no slots are available, politely ask whether they would prefer another date.\n\n4. **Confirm the preferred time:** Ask the customer to select one of the available time slots. If the customer provides an invalid or unavailable time, explain this politely and offer the available alternatives.\n\n5. **Collect required information:** Ask for any necessary details that have not already been provided, such as the customer's full name, phone number, or reason for the appointment.\n\n6. **Confirm booking details:** Before booking, summarize the selected date, time, and relevant customer details. Ask the customer to confirm that everything is correct.\n\n7. **Book the appointment:** Once the customer confirms, use the `book_appointment` tool with the required information. Never claim that the appointment is booked before the tool confirms success.\n\n8. **Provide final confirmation:** After successful booking, clearly communicate the confirmed date and time. If booking fails, apologize and help the customer choose another available slot.\n\n### Conversation Guidelines\n\n- Speak naturally, politely, and conversationally.\n- Ask one question at a time.\n- Keep responses short and easy to understand.\n- Do not ask for information that the customer has already provided.\n- Never invent appointment dates, times, or availability.\n- If the customer is unsure, explain the process and guide them through the next step.\n- If the customer wants to reschedule or cancel, follow the appropriate workflow rather than creating a duplicate booking.\n\n### Example Conversation\n\n**Assistant:** I'd be happy to help you book an appointment. Which day would you prefer?\n\n**Customer:** Tomorrow.\n\n**Assistant:** Let me check the available appointment times for tomorrow.\n\n**Assistant:** I have appointments available at 10:00 AM, 11:30 AM, and 2:00 PM. Which time works best for you?\n\n**Customer:** 11:30 AM.\n\n**Assistant:** Great! Could you please provide your name so I can arrange the appointment?\n\n**Customer:** Rahul Sharma.\n\n**Assistant:** Just to confirm, you'd like an appointment tomorrow at 11:30 AM under the name Rahul Sharma. Is that correct?\n\n**Customer:** Yes.\n\n**Assistant:** Thank you. I'll book that appointment now.\n\n*[Call the booking tool and wait for its result.]*\n\n**Assistant:** Your appointment has been successfully booked for tomorrow at 11:30 AM. Thank you, and have a great day!",
+        "tools_added": [
+          "end_call"
+        ],
+        "created_at": 1793282621.7102659
+      },
+      {
+        "id": "item_5cfad4e31869",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          "नमस्ते narendra singh , मैं आपकी अपॉइंटमेंट बुक करने में कैसे मदद कर सकती हूँ? क्या आप नई अपॉइंटमेंट बुक करना चाहते हैं, मौजूदा अपॉइंटमेंट कैंसल करना चाहते हैं, या उसमें कोई बदलाव करना चाहते हैं?"
+        ],
+        "interrupted": false,
+        "extra": {},
+        "metrics": {
+          "started_speaking_at": 1793282622.8694828,
+          "stopped_speaking_at": 1793282635.3092918,
+          "tts_node_ttfb": 0.324158951996651,
+          "playback_latency": 0.00017380714416503906
+        },
+        "created_at": 1793282622.8694828
+      },
+      {
+        "id": "item_9a716df39e0b",
+        "type": "message",
+        "role": "user",
+        "content": [
+          "हां जी मैं अपने apartment cancel करना चाहता हूं."
+        ],
+        "interrupted": false,
+        "transcript_confidence": 0.93359375,
+        "extra": {},
+        "metrics": {
+          "stt_metadata": {
+            "model_name": "nova-3",
+            "model_provider": "Deepgram"
+          },
+          "started_speaking_at": 1793282622.5983732,
+          "stopped_speaking_at": 1793282639.1379626,
+          "transcription_delay": 0.45873117446899414,
+          "end_of_turn_delay": 0.6838369369506836,
+          "on_user_turn_completed_delay": 0.00014574300075764768
+        },
+        "created_at": 1793282639.5967994
+      },
+      {
+        "id": "item_cb9bc456d5cd",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          "आपकी अपॉइंटमेंट कैंसल करने में मदद करने के लिए मुझे कुछ जानकारी चाहिए। क्या आप मुझे अपनी अपॉइंटमेंट की तारीख और समय बता सकते हैं, ताकि मैं इसे सही तरीके से कैंसल कर सकूं?"
+        ],
+        "interrupted": true,
+        "extra": {},
+        "metrics": {
+          "started_speaking_at": 1793282643.3167748,
+          "stopped_speaking_at": 1793282657.806967,
+          "llm_node_ttft": 2.150995743999374,
+          "llm_node_tps": 39.75712977466874,
+          "llm_node_ttfs": 3.0756245509983273,
+          "tts_node_ttfb": 0.6404729400019278,
+          "playback_latency": 0.000209808349609375,
+          "e2e_latency": 4.178812265396118,
+          "llm_metadata": {
+            "model_name": "gpt-4o-mini",
+            "model_provider": "api.openai.com"
+          },
+          "tts_metadata": {
+            "model_name": "flux-shreya-hi",
+            "model_provider": "Deepgram"
+          }
+        },
+        "created_at": 1793282639.8243046
+      },
+      {
+        "id": "item_fa4d7b0b66f9",
+        "type": "message",
+        "role": "user",
+        "content": [
+          "Hello?"
+        ],
+        "interrupted": false,
+        "transcript_confidence": 0.84594727,
+        "extra": {},
+        "metrics": {
+          "stt_metadata": {
+            "model_name": "nova-3",
+            "model_provider": "Deepgram"
+          },
+          "started_speaking_at": 1793282647.695193,
+          "stopped_speaking_at": 1793282648.187031,
+          "transcription_delay": 10.490793704986572,
+          "end_of_turn_delay": 10.579341888427734
+        },
+        "created_at": 1793282658.766704
+      }
+    ],
+    "status": "completed"
+  },
+  "created_at": {
+    "$date": "2026-10-29T14:04:23.941Z"
+  },
+  "updated_at": {
+    "$date": "2026-10-29T14:04:23.941Z"
+  }
+}

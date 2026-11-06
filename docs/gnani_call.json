@@ -1,0 +1,481 @@
+{
+  "_id": "6aed99ec9068afbd4de59949",
+  "conversation_id": "95621345186669637161",
+  "bot_id": "7eb0a9106c16421d9c0d3efd4c74096e",
+  "bot_language": "en-IN",
+  "time_zone": "Asia/Kolkata",
+  "bot_type": "voice_outbound",
+  "end_call": false,
+  "language": "english",
+  "user_context": {
+    "current_date": "2026-11-06T09:10:14.583000",
+    "phone": "+919645637161",
+    "sender_id": "95621345186669637161",
+    "language": "english",
+    "full_name": "narendra",
+    "customer_name": "narendra",
+    "time_of_day": "Good Afternoon",
+    "full_name_uttered": "narendra",
+    "sequence_number": "0",
+    "answered_seq": "0",
+    "no_answer_seq": "0",
+    "phone_number": "9645637161",
+    "customer_phone": "9645637161",
+    "call_sequence_mapping": "{}",
+    "input_date": "",
+    "inserted_on": "2026-11-06T14:40:14.591000",
+    "call_received_count": "0",
+    "interest_count": "0",
+    "dscn_count": "0",
+    "not_interested_count": "0",
+    "call_back_count": "0",
+    "follow_up_count": "0",
+    "wrong_number_count": "0",
+    "phone_number_input_date": "",
+    "last_triggered_date": "2026-11-06T09:10:14.583000",
+    "triggered_from": "",
+    "date_today": "Friday 6 November",
+    "date_tomorrow": "Saturday 7 November",
+    "date_day_after": "Sunday 8 November",
+    "date_next_monday": "9 November",
+    "date_next_tuesday": "10 November",
+    "date_next_wednesday": "11 November",
+    "date_next_thursday": "12 November",
+    "date_next_friday": "13 November",
+    "date_next_saturday": "7 November",
+    "date_next_sunday": "8 November",
+    "agent_name": "DEV_SIB-LAMF-s",
+    "agent_gender": "Female",
+    "agent_personality": "",
+    "persona_id": "persona-1253a577"
+  },
+  "tokens_used": 0,
+  "audio_queue": null,
+  "kb_owner_user_id": null,
+  "bot_name": "DEV_SIB_LAMF-Scenarios-prod-f6c059a1c125",
+  "languages": [],
+  "llm_languages": [],
+  "bot_languages": [
+    "en-IN",
+    "hi-IN",
+    "ta-IN",
+    "ml-IN"
+  ],
+  "mapped_bot_languages": [
+    "english",
+    "devanagiri hindi",
+    "hindi",
+    "tamil",
+    "malayalam"
+  ],
+  "is_tta": false,
+  "user_name": "narendra.singh@gnani.ai",
+  "persona_id": "persona-1253a577",
+  "persona_snapshot": {
+    "name": "DEV_SIB-LAMF-s",
+    "gender": "female",
+    "voice": "39af983f-7504-59f2-a633-eb28f235759c",
+    "provider": "vachana_timbre-v2.5",
+    "tts_rate": 1
+  },
+  "phone": "+919645637161",
+  "sender_id": "95621345186669637161",
+  "full_name": "narendra",
+  "customer_name": "narendra",
+  "time_of_day": "Good Afternoon",
+  "full_name_uttered": "narendra",
+  "sequence_number": 1,
+  "answered_seq": 1,
+  "no_answer_seq": 0,
+  "phone_number": 9645637161,
+  "customer_phone": "9645637161",
+  "call_sequence_mapping": {
+    "2026-11-06": {
+      "calls_triggered": 1,
+      "answered": 1,
+      "not_answered": 0,
+      "max_trigger": 3
+    }
+  },
+  "input_date": "",
+  "inserted_on": "2026-11-06T14:40:14.591000",
+  "call_received_count": "0",
+  "interest_count": "0",
+  "dscn_count": "0",
+  "not_interested_count": "0",
+  "call_back_count": "0",
+  "follow_up_count": "0",
+  "wrong_number_count": "0",
+  "phone_number_input_date": "",
+  "last_triggered_date": "2026-11-06T09:10:14.583000",
+  "date_today": "Friday 6 November",
+  "date_tomorrow": "Saturday 7 November",
+  "date_day_after": "Sunday 8 November",
+  "date_next_monday": "9 November",
+  "date_next_tuesday": "10 November",
+  "date_next_wednesday": "11 November",
+  "date_next_thursday": "12 November",
+  "date_next_friday": "13 November",
+  "date_next_saturday": "7 November",
+  "date_next_sunday": "8 November",
+  "organization_id": "4d8368fc-cbcc-4969-84e6-6459eff9feac",
+  "actions": {},
+  "call_status": "ANSWERED",
+  "user_id": "691a770e-ef24-43bf-b035-f7a4c3a029f1",
+  "call_type": "live",
+  "environment": "production",
+  "persona_tts_type": "vachana_timbre-v2.5",
+  "persona_tts_voice": "39af983f-7504-59f2-a633-eb28f235759c",
+  "persona_tts_rate": 1,
+  "persona_tts_lang": "en-IN",
+  "secondary_tts": {
+    "enabled": false
+  },
+  "EOC": true,
+  "scenario_state": {
+    "current_scenario": "closing",
+    "previous_scenario": "callback",
+    "return_scenario": null,
+    "language": "ml-IN",
+    "transition_history": [
+      {
+        "from": "greeting",
+        "to": "language",
+        "type": "deterministic",
+        "scope": "scenario",
+        "condition": "can_talk EQUALS true",
+        "timestamp": 1793956228.9447973
+      },
+      {
+        "from": "language",
+        "to": "interest",
+        "type": "deterministic",
+        "scope": "scenario",
+        "condition": "language_pref EXISTS",
+        "timestamp": 1793956245.005129
+      },
+      {
+        "from": "interest",
+        "to": "callback",
+        "type": "deterministic",
+        "scope": "scenario",
+        "condition": "wants_callback EQUALS true",
+        "timestamp": 1793956289.096225
+      },
+      {
+        "from": "callback",
+        "to": "closing",
+        "type": "deterministic",
+        "scope": "scenario",
+        "condition": "closing_type EXISTS",
+        "timestamp": 1793956324.8411996
+      }
+    ]
+  },
+  "disposition_result": {
+    "DISPOSITION": "CONV_CALLBACK",
+    "call_summary": "2026-11-07",
+    "disconnected_by": "BOT",
+    "callback_time": "18:00"
+  },
+  "STAGE_CODE": "CONV_CALLBACK",
+  "aura_analytics_enabled": false,
+  "aura_org_id": "",
+  "cross_platform_linked": true,
+  "conversation_log": [
+    {
+      "role": "assistant",
+      "content": "Good Afternoon narendra I am Sona, calling from South Indian Bank. I'm reaching out to inform you about our Loan Against Mutual Funds facility. Can we speak for a minute?",
+      "timestamp": 1793956224.370274,
+      "turn_id": 0,
+      "fullContent": "Good Afternoon narendra I am Sona, calling from South Indian Bank. I'm reaching out to inform you about our Loan Against Mutual Funds facility. Can we speak for a minute?"
+    },
+    {
+      "role": "user",
+      "content": "haan yes tell me",
+      "timestamp": 1793956228.52361,
+      "turn_id": 1,
+      "totalResults": {
+        "en-IN": "haan yes tell me",
+        "hi-IN": "हाँ येस टेल मी",
+        "ta-IN": "ஆ யெஸ் கல்வி",
+        "ml-IN": "ആ യെസ് ടെൽ വി"
+      },
+      "detectedLanguage": "english",
+      "userInterruptionFlag": true,
+      "segmentStartTime": 11.991,
+      "segmentEndTime": 13.882
+    },
+    {
+      "role": "assistant",
+      "content": "Thank you. This call is recorded for quality and training purposes. By the way, are you comfortable speaking in English, or would you prefer Hindi, Tamil or Malayalam?",
+      "timestamp": 1793956238.930546,
+      "turn_id": 1,
+      "fullContent": "Thank you. This call is recorded for quality and training purposes. By the way, are you comfortable speaking in English, or would you prefer Hindi, Tamil or Malayalam?",
+      "currentScenario": "language",
+      "variablesUpdated": {
+        "can_talk": {
+          "old": "<DEFAULT>",
+          "new": "true"
+        }
+      },
+      "segmentStartTime": 14.4248,
+      "segmentEndTime": 14.4936
+    },
+    {
+      "role": "user",
+      "content": "ஆம் தமிழ்",
+      "timestamp": 1793956244.10362,
+      "turn_id": 2,
+      "totalResults": {
+        "en-IN": "tamil",
+        "hi-IN": "तमिल",
+        "ta-IN": "ஆம் தமிழ்",
+        "ml-IN": "തമിഴ്"
+      },
+      "detectedLanguage": "tamil",
+      "userInterruptionFlag": true,
+      "segmentStartTime": 27.6273,
+      "segmentEndTime": 29.462
+    },
+    {
+      "role": "assistant",
+      "content": "South Indian Bank-ல, உங்க Mutual Funds-அ விக்காமலே அதுக்கு against-ஆ loan வாங்கிக்கலாம். நீங்க எவ்வளவு amount use பண்றீங்களோ, அதுக்கு மட்டும் தான் interest charge பண்ணுவாங்க. இதோட interest, loan",
+      "timestamp": 1793956256.630382,
+      "turn_id": 2,
+      "fullContent": "South Indian Bank-ல, உங்க Mutual Funds-அ விக்காமலே அதுக்கு against-ஆ loan வாங்கிக்கலாம். நீங்க எவ்வளவு amount use பண்றீங்களோ, அதுக்கு மட்டும் தான் interest charge பண்ணுவாங்க. இதோட interest, loan amount இல்லனா இது எப்படி work ஆகுதுன்னு தெரிஞ்சுக்க விருப்பமா இருக்கீங்களா?",
+      "currentScenario": "interest",
+      "variablesUpdated": {
+        "language_pref": {
+          "old": "<DEFAULT>",
+          "new": "tamil"
+        }
+      },
+      "segmentStartTime": 30.5241,
+      "segmentEndTime": 30.9503
+    },
+    {
+      "role": "user",
+      "content": "ഇല്ല ഇല്ല തമിഴ് പുരിയത് മലയാളത്തിൽ മലയാളത്തിൽ",
+      "timestamp": 1793956260.422608,
+      "turn_id": 3,
+      "totalResults": {
+        "en-IN": "tamil puriyaad",
+        "hi-IN": "तमिल मलयालम",
+        "ta-IN": "இல்லைல்ல தமிழ் புரியாது மலையாளத்தில் மலையாளத்தில் பேச",
+        "ml-IN": "ഇല്ല ഇല്ല തമിഴ് പുരിയത് മലയാളത്തിൽ മലയാളത്തിൽ"
+      },
+      "detectedLanguage": "malayalam",
+      "userInterruptionFlag": true,
+      "segmentStartTime": 41.9681,
+      "segmentEndTime": 45.781
+    },
+    {
+      "role": "assistant",
+      "content": "South Indian Bank-ൽ, നിങ്ങളുടെ Mutual Funds വിൽക്കാതെ തന്നെ അതിന് against-ആയി loan എടുക്കാം. നിങ്ങൾ ഉപയോഗിക്കുന്ന amount-ന് മാത്രമേ interest നൽകേണ്ടി വരൂ. ഇതിന്റെ interest, loan amount അല്ലെങ്കിൽ ഇത് എങ്ങനെയാണ് വർക്ക് ചെയ്യുന്നത് എന്നതിനെക്കുറിച്ച് അറിയാൻ നിങ്ങൾക്ക് താല്പര്യമുണ്ടോ?",
+      "timestamp": 1793956277.010909,
+      "turn_id": 3,
+      "fullContent": "South Indian Bank-ൽ, നിങ്ങളുടെ Mutual Funds വിൽക്കാതെ തന്നെ അതിന് against-ആയി loan എടുക്കാം. നിങ്ങൾ ഉപയോഗിക്കുന്ന amount-ന് മാത്രമേ interest നൽകേണ്ടി വരൂ. ഇതിന്റെ interest, loan amount അല്ലെങ്കിൽ ഇത് എങ്ങനെയാണ് വർക്ക് ചെയ്യുന്നത് എന്നതിനെക്കുറിച്ച് അറിയാൻ നിങ്ങൾക്ക് താല്പര്യമുണ്ടോ?",
+      "currentScenario": "interest",
+      "variablesUpdated": {},
+      "segmentStartTime": 46.9221,
+      "segmentEndTime": 46.9243
+    },
+    {
+      "role": "user",
+      "content": "ആ പറയൂ പറയൂ ഇത് എങ്ങനെ എനിക്ക് മ്യൂച്വൽ ഫണ്ട് ഉണ്ടെന്ന് തോന്നൽ പക്ഷേ അതിന് ലോൺ അഗെയിൻസ്റ്റ് മ്യൂച്വൽ ഫണ്ട് എങ്ങനെയാണ് എടുക്കുന്നത്",
+      "timestamp": 1793956286.96741,
+      "turn_id": 4,
+      "totalResults": {
+        "en-IN": "",
+        "hi-IN": "हाँ कर यू करे म्यूच्यूअल फण्ड लोन अगेंस्ट म्यूच्यूअल फण्ड",
+        "ta-IN": "ஆ கரியூ கரியூ இது எங்கன எனக்கு மியூச்சுவல் ஃபண்ட் உண்டென்னு தோணும் பட் அதனால லோன் அகெயின்ஸ்ட்டு மியூச்சுவல் ஃபண்டு எங்கனா எடுக்கணும்",
+        "ml-IN": "ആ പറയൂ പറയൂ ഇത് എങ്ങനെ എനിക്ക് മ്യൂച്വൽ ഫണ്ട് ഉണ്ടെന്ന് തോന്നൽ പക്ഷേ അതിന് ലോൺ അഗെയിൻസ്റ്റ് മ്യൂച്വൽ ഫണ്ട് എങ്ങനെയാണ് എടുക്കുന്നത്"
+      },
+      "detectedLanguage": "malayalam",
+      "userInterruptionFlag": true,
+      "segmentStartTime": 63.7898,
+      "segmentEndTime": 72.3258
+    },
+    {
+      "role": "assistant",
+      "content": "കൊള്ളാം. ഞങ്ങളുടെ team call ചെയ്ത് facility-യെ കുറിച്ച് detail ആയി പറഞ്ഞുതരും. രാവിലെ ഒമ്പത് മണി മുതൽ വൈകുന്നേരം ആറ് മണി വരെ, തിങ്കൾ മുതൽ ശനി വരെ ഏത് സമയമാണ് സൗകര്യപ്രദം?",
+      "timestamp": 1793956300.31105,
+      "turn_id": 4,
+      "fullContent": "കൊള്ളാം. ഞങ്ങളുടെ team call ചെയ്ത് facility-യെ കുറിച്ച് detail ആയി പറഞ്ഞുതരും. രാവിലെ ഒമ്പത് മണി മുതൽ വൈകുന്നേരം ആറ് മണി വരെ, തിങ്കൾ മുതൽ ശനി വരെ ഏത് സമയമാണ് സൗകര്യപ്രദം?",
+      "currentScenario": "callback",
+      "variablesUpdated": {
+        "wants_callback": {
+          "old": "<DEFAULT>",
+          "new": "true"
+        },
+        "callback_context": {
+          "old": "<DEFAULT>",
+          "new": "interested"
+        }
+      },
+      "segmentStartTime": 74.5874,
+      "segmentEndTime": 74.7161
+    },
+    {
+      "role": "user",
+      "content": "",
+      "timestamp": 1793956304.170921,
+      "turn_id": 5,
+      "totalResults": {
+        "en-IN": "",
+        "hi-IN": "हाँ ठीक है",
+        "ta-IN": "",
+        "ml-IN": ""
+      },
+      "detectedLanguage": "malayalam",
+      "userInterruptionFlag": true,
+      "segmentStartTime": 88.2521,
+      "segmentEndTime": 89.5293
+    },
+    {
+      "role": "assistant",
+      "content": "കൊള്ളാം. ഞങ്ങളുടെ team call ചെയ്ത് facility-യെ കുറിച്ച് detail ആയി പറഞ്ഞുതരും. രാവിലെ ഒമ്പത് മണി മുതൽ വൈകുന്നേരം ആറ് മണി വരെ, തിങ്കൾ മുതൽ ശനി വരെ ഏത് സമയമാണ് സൗകര്യപ്രദം?",
+      "timestamp": 1793956315.410797,
+      "turn_id": 5,
+      "fullContent": "കൊള്ളാം. ഞങ്ങളുടെ team call ചെയ്ത് facility-യെ കുറിച്ച് detail ആയി പറഞ്ഞുതരും. രാവിലെ ഒമ്പത് മണി മുതൽ വൈകുന്നേരം ആറ് മണി വരെ, തിങ്കൾ മുതൽ ശനി വരെ ഏത് സമയമാണ് സൗകര്യപ്രദം?",
+      "currentScenario": "callback",
+      "variablesUpdated": {},
+      "segmentStartTime": 89.8289,
+      "segmentEndTime": 89.8303
+    },
+    {
+      "role": "user",
+      "content": "ഓക്കെ ആറ് മണി",
+      "timestamp": 1793956324.333842,
+      "turn_id": 6,
+      "totalResults": {
+        "en-IN": "ok harmony",
+        "hi-IN": "ओके हार्मोनी",
+        "ta-IN": "ஓகே ஆறு மணி",
+        "ml-IN": "ഓക്കെ ആറ് മണി"
+      },
+      "detectedLanguage": "malayalam",
+      "userInterruptionFlag": true,
+      "segmentStartTime": 107.0058,
+      "segmentEndTime": 109.6922
+    },
+    {
+      "role": "assistant",
+      "content": "നന്ദി. ശരി, ഞങ്ങളുടെ team നിങ്ങളെ ആറ് മണിക്ക് call ചെയ്യും. have a great day.",
+      "timestamp": 1793956325.0508718,
+      "turn_id": 6,
+      "fullContent": "നന്ദി. ശരി, ഞങ്ങളുടെ team നിങ്ങളെ ആറ് മണിക്ക് call ചെയ്യും. have a great day.",
+      "currentScenario": "closing",
+      "variablesUpdated": {
+        "callback_date": {
+          "old": "<DEFAULT>",
+          "new": "2026-11-06"
+        },
+        "callback_time": {
+          "old": "<DEFAULT>",
+          "new": "18:00"
+        },
+        "callback_said": {
+          "old": "<DEFAULT>",
+          "new": "ആറ് മണി"
+        },
+        "closing_type": {
+          "old": "<DEFAULT>",
+          "new": "callback_confirmed"
+        },
+        "disposition": {
+          "old": "<DEFAULT>",
+          "new": "CONV_CALLBACK"
+        }
+      },
+      "segmentStartTime": 110.4094,
+      "segmentEndTime": 110.5179
+    }
+  ],
+  "call_infra": {
+    "call_status": {
+      "customerCRTId": "95621345186669637161",
+      "ringingTime": "1",
+      "setupTime": "116",
+      "callStatus": "ANSWERED",
+      "callStartTime": "2026-11-06T09:10:13",
+      "callConnectedTime": "2026-11-06T09:10:14",
+      "callEndTime": "2026-11-06T09:12:11",
+      "srcPhone": "+919645637161",
+      "dstPhone": "9645637161|prod-f6c059a1c125;;Gnani",
+      "callType": "Inbound",
+      "call_uid": "95621345186669637161",
+      "flow_id": "prod-f6c059a1c125",
+      "gnanivb_cdr_source": "PBX",
+      "gnanivb_hangup_cause_code": "",
+      "gnanivb_hangup_cause_text_tech": "",
+      "gnanivb_hangup_cause_text_ast": "",
+      "gnanivb_dial_status": "",
+      "gnanivb_billing_duration": "",
+      "_id": "",
+      "customerPhone": "9645637161",
+      "rec_path": "prod-f6c059a1c125/2026_11_06/prod-f6c059a1c125-95621345186669637161-9645637161-2026_11_06-14_40_14"
+    }
+  },
+  "callConnectedTime": "2026-11-06T09:10:14",
+  "callStartTime": "2026-11-06T09:10:13",
+  "customerCRTId": "95621345186669637161",
+  "callEndTime": "2026-11-06T09:12:11",
+  "ringingTime": 1,
+  "setupTime": 116,
+  "srcPhone": "+919645637161",
+  "dstPhone": "9645637161|prod-f6c059a1c125;;Gnani",
+  "callType": "Inbound",
+  "call_uid": "95621345186669637161",
+  "flow_id": "prod-f6c059a1c125",
+  "gnanivb_cdr_source": "PBX",
+  "gnanivb_hangup_cause_code": "",
+  "gnanivb_hangup_cause_text_tech": "",
+  "gnanivb_hangup_cause_text_ast": "",
+  "gnanivb_dial_status": "",
+  "gnanivb_billing_duration": "",
+  "customerPhone": "9645637161",
+  "rec_path": "prod-f6c059a1c125/2026_11_06/prod-f6c059a1c125-95621345186669637161-9645637161-2026_11_06-14_40_14",
+  "tempDate": "06/11/2026",
+  "post_call_extraction": "NA",
+  "post_call_extraction_v2": {
+    "DISPOSITION": "CONV_CALLBACK",
+    "call_summary": "2026-11-07",
+    "disconnected_by": "BOT",
+    "callback_time": "18:00"
+  },
+  "in_call_extraction": {
+    "current_date": "2026-11-06T09:10:14.583000",
+    "current_time": "02:40 PM",
+    "current_day": "Friday",
+    "current_timestamp": "2026-11-06T14:40:14.592173+05:30",
+    "can_talk": "true",
+    "wants_callback": "true",
+    "callback_context": "interested",
+    "objection_type": "",
+    "callback_date": "2026-11-06",
+    "callback_time": "18:00",
+    "closing_type": "callback_confirmed",
+    "disposition": "CONV_CALLBACK",
+    "agent_gender": "Female",
+    "agent_personality": "",
+    "agent_name": "DEV_SIB-LAMF-s",
+    "dialled_phone_number": "+919645637161",
+    "conversation_id": "95621345186669637161",
+    "callback_said": "ആറ് മണി",
+    "language_pref": "tamil"
+  },
+  "DISPOSITION": "CONV_CALLBACK",
+  "setup_time": 116,
+  "summary": "",
+  "call_initiated": true,
+  "call_comp_flag": "no",
+  "call_duration": "0:01:56",
+  "sts": "ANSWERED",
+  "lead_score": "",
+  "call_score": "",
+  "next_trigger_date": "2026-11-07T03:30:00",
+  "trigger_call": false,
+  "is_test": true
+}
