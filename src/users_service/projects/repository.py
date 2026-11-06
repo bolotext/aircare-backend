@@ -59,7 +59,10 @@ async def update_project(
     customer_details_collection_name: str | None = None,
     customer_details_fields: list[dict] | None = None,
     flow_id: str | None = None,
+    saved_filters: list[dict] | None = None,
 ) -> Project:
+    if saved_filters is not None:
+        project.saved_filters = saved_filters
     if name is not None:
         project.name = name
     if status is not None:

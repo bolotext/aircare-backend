@@ -110,3 +110,32 @@ async def test_bulk_source_documents_in_requested_order(app, client):
     docs = resp.json()["data"]
 
     assert [d["conversation_id"] for d in docs] == ["b-2", "b-1"]
+
+
+async def test_field_values_and_multi_value_filter(app, client):
+    from reports_service.calls.model import Call
+    from reports_service.core.deps import ProjectCallSource, resolve_project_source
+
+    await _seed()
+    app.dependency_overrides[get_current_identity] = lambda: make_identity("ADMIN")
+    app.dependency_overrides[resolve_project_source] = lambda: ProjectCallSource(
+        collection=Call.get_pymongo_collection(),
+        organization_id=str(ORG),
+        adapter=None,
+        field_mapping={"lang": "language"},
+    )
+
+    resp = await client.get("/api/v1/calls/field-values", params={"project_id": str(PROJECT), "field": "lang"})
+    data = resp.json()["data"]
+    assert data["raw_field"] == "language" and data["values"] and data["sampled"] > 0
+
+    one = data["values"][0]
+    resp = await client.get(
+        "/api/v1/calls",
+        params={"project_id": str(PROJECT), "filter_field": "lang", "filter_values": [one], "page_size": 100},
+    )
+    items = resp.json()["data"]["items"]
+    assert items and all(i["fields"]["lang"] == one for i in items)
+
+    resp = await client.get("/api/v1/calls/field-values", params={"project_id": str(PROJECT), "field": "nope"})
+    assert resp.json()["code"] == 422

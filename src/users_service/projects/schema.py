@@ -100,6 +100,14 @@ class ProjectCreate(BaseModel):
     )
 
 
+class SavedFilter(BaseModel):
+    """A saved multi-value filter on one Field Mapper field."""
+
+    name: str = Field(min_length=1, max_length=100)
+    field: str = Field(min_length=1, max_length=100, description="Canonical (Field Mapper) name.")
+    values: list[str] = Field(default_factory=list, max_length=500)
+
+
 class ProjectUpdate(BaseModel):
     """Partial update — omitted fields are left unchanged. The data source (`report_db_name`,
     `report_collection_name`, `customer_details_collection_name`) is editable; an empty
@@ -131,6 +139,11 @@ class ProjectUpdate(BaseModel):
         default=None,
         max_length=200,
         description="Replaces the whole canonical-name -> raw-field mapping. Omit to leave unchanged.",
+    )
+    saved_filters: list[SavedFilter] | None = Field(
+        default=None,
+        max_length=100,
+        description="Replaces the whole list of saved Conversation Logs filters. Omit to leave unchanged.",
     )
 
 
@@ -165,6 +178,7 @@ class ProjectOut(BaseModel):
     status: ProjectStatus = Field(description='`"active"` or `"archived"`.')
     customer_details_fields: list[CustomerFieldSpec] = Field(default_factory=list, description="Key + value type of each customer-details field.")
     field_mapping: dict[str, str] = Field(default_factory=dict, description="Canonical field name -> raw field name in the report collection.")
+    saved_filters: list[SavedFilter] = Field(default_factory=list, description="Saved Conversation Logs filter presets.")
     created_by: str = Field(description="Id of the user who created this project.")
     created_at: datetime = Field(description="UTC creation timestamp.")
     updated_at: datetime = Field(description="UTC timestamp of the most recent update.")

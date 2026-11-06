@@ -35,6 +35,7 @@ def _to_out(project: Project) -> ProjectOut:
         flow_id=project.flow_id,
         customer_details_fields=project.customer_details_fields,
         field_mapping=project.field_mapping,
+        saved_filters=project.saved_filters,
         created_by=str(project.created_by),
         created_at=project.created_at,
         updated_at=project.updated_at,
@@ -164,6 +165,9 @@ async def update_project(
         name=payload.name,
         status=payload.status,
         field_mapping=payload.field_mapping,
+        saved_filters=(
+            [f.model_dump() for f in payload.saved_filters] if payload.saved_filters is not None else None
+        ),
         customer_details_fields=(
             [f.model_dump() for f in payload.customer_details_fields]
             if payload.customer_details_fields is not None

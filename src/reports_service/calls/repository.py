@@ -33,6 +33,24 @@ class CallFilter:
     # Case-insensitive substring match on any turn's text in the call's
     # transcript (`raw.conversation_log[].content`).
     transcript_search: str | None = None
+    # "Saved filter" on a mapped field: the call's `field_raw` source field must
+    # equal one of `field_values` (string forms; numbers match either way).
+    field_raw: str | None = None
+    field_values: tuple[str, ...] = ()
+
+
+def _value_variants(values: tuple[str, ...]) -> list:
+    out: list = []
+    for v in values:
+        out.append(v)
+        try:
+            out.append(int(v))
+        except ValueError:
+            try:
+                out.append(float(v))
+            except ValueError:
+                pass
+    return out
 
 
 def _transcript_texts(raw: dict | None) -> list[str]:
@@ -99,6 +117,8 @@ def build_mongo_query(call_filter: CallFilter) -> dict:
         query["call_status"] = call_filter.call_status
     if call_filter.flow_id:
         query["flow_id"] = call_filter.flow_id
+    if call_filter.field_raw and call_filter.field_values:
+        query[call_filter.field_raw] = {"$in": _value_variants(call_filter.field_values)}
     if call_filter.search:
         pattern = {"$regex": re.escape(call_filter.search), "$options": "i"}
         query["$or"] = [
@@ -175,6 +195,10 @@ def matches_filter(call: Call, call_filter: CallFilter) -> bool:
         return False
     if call_filter.flow_id and (call._source_doc or {}).get("flow_id") != call_filter.flow_id:
         return False
+    if call_filter.field_raw and call_filter.field_values:
+        got = (call._source_doc or {}).get(call_filter.field_raw)
+        if got is None or str(got) not in call_filter.field_values:
+            return False
     if call_filter.search:
         needle = call_filter.search.lower()
         flow_id = (call._source_doc or {}).get("flow_id")

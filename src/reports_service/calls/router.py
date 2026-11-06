@@ -111,6 +111,12 @@ async def list_calls(
     transcript_search: str | None = Query(
         default=None, min_length=2, max_length=100, description="Case-insensitive substring match on the text of any turn in the call transcript. Each returned item carries a `transcript_match` excerpt.", examples=["inhaler"]
     ),
+    filter_field: str | None = Query(
+        default=None, max_length=100, description="Canonical (Field Mapper) name of a field to filter on; used with `filter_values`."
+    ),
+    filter_values: list[str] | None = Query(
+        default=None, max_length=500, description="Keep only calls whose `filter_field` equals any of these values (OR)."
+    ),
     page: int = Query(default=1, ge=1, description="1-indexed page number to return."),
     page_size: int | None = Query(
         default=None,
@@ -127,7 +133,14 @@ async def list_calls(
     effective_page_size = min(page_size or settings.default_page_size, settings.max_page_size)
 
     window_start, window_end = day_range_bounds(date_from, date_to)
+    field_raw = None
+    if filter_field and filter_values:
+        field_raw = source.field_mapping.get(filter_field)
+        if not field_raw:
+            raise UnprocessableEntityError(f"'{filter_field}' is not mapped in the Field Mapper")
     call_filter = CallFilter(
+        field_raw=field_raw,
+        field_values=tuple(filter_values or ()),
         project_ids=[project_id],
         date_from=window_start,
         date_to=window_end,
@@ -281,6 +294,42 @@ async def import_call_from_prod(
         customer_payload=body.customer_payload,
     )
     return success_response(message="Imported from prod", data=ProdImportResult(**result))
+
+
+@router.get(
+    "/field-values",
+    summary="Distinct values of a mapped field (latest 1000 calls)",
+    description="""Looks at the project's most recent calls (up to `limit`, max 1000) and returns the distinct
+values of the Field Mapper field `field`. Used by the Field Mapper's "Create filter" button.""",
+)
+async def field_values(
+    project_id: str = Query(..., description="The project to sample."),
+    field: str = Query(..., min_length=1, max_length=100, description="Canonical (Field Mapper) field name."),
+    limit: int = Query(default=1000, ge=1, le=1000),
+    identity: IdentityContext = Depends(require_permission("report.view")),
+    source: ProjectCallSource = Depends(resolve_project_source),
+) -> dict:
+    ensure_project_access(identity, project_id)
+    raw_field = source.field_mapping.get(field)
+    if not raw_field:
+        raise UnprocessableEntityError(f"'{field}' is not mapped in the Field Mapper")
+    items, _ = await call_repo.list_paginated(
+        CallFilter(project_ids=[project_id]),
+        page=1,
+        page_size=limit,
+        collection=source.collection,
+        adapter=source.adapter,
+        organization_id=source.organization_id,
+    )
+    distinct: set[str] = set()
+    for call in items:
+        value = extract_fields(call._source_doc, {field: raw_field}).get(field)
+        if value is not None and value != "":
+            distinct.add(str(value))
+    values = sorted(distinct)[:500]
+    return success_response(
+        data={"field": field, "raw_field": raw_field, "sampled": len(items), "values": values, "truncated": len(distinct) > len(values)}
+    )
 
 
 @router.get(

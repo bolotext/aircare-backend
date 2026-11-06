@@ -31,6 +31,8 @@ class Project(Document):
     # collection, e.g. {"phone_number": "customerPhone"}. Stored only; the
     # reports service does not apply it yet.
     field_mapping: dict[str, str] = Field(default_factory=dict)
+    # Saved Conversation Logs filter presets: [{"name", "field", "values": [...]}].
+    saved_filters: list[dict[str, Any]] = Field(default_factory=list)
     created_by: PydanticObjectId
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
