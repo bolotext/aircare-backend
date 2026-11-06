@@ -37,6 +37,8 @@ class CallFilter:
     # equal one of `field_values` (string forms; numbers match either way).
     field_raw: str | None = None
     field_values: tuple[str, ...] = ()
+    # Several mapped-field filters at once: ((raw_field, values), ...), AND-ed together.
+    extra_fields: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
 
 def _value_variants(values: tuple[str, ...]) -> list:
@@ -119,6 +121,8 @@ def build_mongo_query(call_filter: CallFilter) -> dict:
         query["flow_id"] = call_filter.flow_id
     if call_filter.field_raw and call_filter.field_values:
         query[call_filter.field_raw] = {"$in": _value_variants(call_filter.field_values)}
+    for raw, values in call_filter.extra_fields:
+        query[raw] = {"$in": _value_variants(values)}
     if call_filter.search:
         pattern = {"$regex": re.escape(call_filter.search), "$options": "i"}
         query["$or"] = [
@@ -198,6 +202,10 @@ def matches_filter(call: Call, call_filter: CallFilter) -> bool:
     if call_filter.field_raw and call_filter.field_values:
         got = (call._source_doc or {}).get(call_filter.field_raw)
         if got is None or str(got) not in call_filter.field_values:
+            return False
+    for raw, values in call_filter.extra_fields:
+        got = (call._source_doc or {}).get(raw)
+        if got is None or str(got) not in values:
             return False
     if call_filter.search:
         needle = call_filter.search.lower()

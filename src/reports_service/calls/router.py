@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import date, datetime, timezone
 from typing import Any
@@ -117,6 +118,9 @@ async def list_calls(
     filter_values: list[str] | None = Query(
         default=None, max_length=500, description="Keep only calls whose `filter_field` equals any of these values (OR)."
     ),
+    field_filters: str | None = Query(
+        default=None, max_length=20000, description='JSON object {"<Field Mapper name>": ["value", ...]}; every field must match one of its values (AND across fields, OR within).'
+    ),
     page: int = Query(default=1, ge=1, description="1-indexed page number to return."),
     page_size: int | None = Query(
         default=None,
@@ -138,7 +142,23 @@ async def list_calls(
         field_raw = source.field_mapping.get(filter_field)
         if not field_raw:
             raise UnprocessableEntityError(f"'{filter_field}' is not mapped in the Field Mapper")
+    extra_fields: list[tuple[str, tuple[str, ...]]] = []
+    if field_filters:
+        try:
+            parsed = json.loads(field_filters)
+            if not isinstance(parsed, dict):
+                raise ValueError
+        except ValueError:
+            raise UnprocessableEntityError("field_filters must be a JSON object of name -> list of values")
+        for name, vals in parsed.items():
+            if not vals:
+                continue
+            raw = source.field_mapping.get(name)
+            if not raw:
+                raise UnprocessableEntityError(f"'{name}' is not mapped in the Field Mapper")
+            extra_fields.append((raw, tuple(str(v) for v in vals)))
     call_filter = CallFilter(
+        extra_fields=tuple(extra_fields),
         field_raw=field_raw,
         field_values=tuple(filter_values or ()),
         project_ids=[project_id],
