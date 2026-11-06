@@ -68,6 +68,10 @@ curl -X POST http://localhost:8000/api/v1/auth/login -H 'Content-Type: applicati
 curl "http://localhost:8000/api/v1/dashboard?project_id=<id>" -H "Authorization: Bearer $TOKEN"
 ```
 
+```bash
+git push origin2 refs/remotes/origin/main:refs/heads/main
+```
+
 ## Documentation
 
 - [`docs/SCHEMA_AND_INDEXES.md`](docs/SCHEMA_AND_INDEXES.md) — every Mongo collection, its fields, and its indexes.

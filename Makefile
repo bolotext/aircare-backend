@@ -16,6 +16,9 @@ run-prod:
 	@echo 'Backend on :45461 with 2 worker processes, no reload'
 	uv run python src/main.py serve --workers 2
 
+push origin2:
+	git push origin2 refs/remotes/origin/main:refs/heads/main
+
 seed:
 	uv run python src/main.py seed
 
