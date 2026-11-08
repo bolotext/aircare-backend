@@ -1,4 +1,4 @@
-.PHONY: install test run run-prod seed seed-demo schedule docker-build docker-up docker-down docker-restart
+.PHONY: install test run runall run-prod seed seed-demo schedule docker-build docker-up docker-down docker-restart
 
 # Everything is one app on :45461, configured by ./.env (see src/common/env.py).
 
@@ -11,6 +11,14 @@ test:
 run:
 	@echo 'Backend on :45461 with --reload (dev only; needs a reachable MongoDB, see .env)'
 	uv run python src/main.py serve --reload
+
+# Backend + frontend (../aircare_frontend) in parallel; Ctrl-C stops both.
+FRONTEND_DIR ?= ../aircare_frontend
+runall:
+	@trap 'kill 0' INT TERM; \
+	$(MAKE) run & \
+	$(MAKE) -C $(FRONTEND_DIR) run & \
+	wait
 
 run-prod:
 	@echo 'Backend on :45461 with 2 worker processes, no reload'
